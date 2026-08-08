@@ -1094,6 +1094,207 @@ function PP_probeTemplates(payloadJson) {
 }
 
 /* ------------------------------------------------------------------ */
+/* PROBE 7 - KLIP MEKANIGI PROVASI (M3'un cekirdegi)                   */
+/*                                                                     */
+/* Probe 6'da index 0 ("Text") string kabul edip geri verdi ama ekranda*/
+/* yazi degismedi -> o parametre grup basligi. Gercek metin type-6     */
+/* parametrelerin ("Title"/"Subtitle") JSON blob degerinin icinde.     */
+/*                                                                     */
+/* Bu probe hicbir sey varsaymaz:                                      */
+/*   1) her parametrenin TAM degerini kirpmadan doker (sema gorulsun)  */
+/*   2) her parametreye duz string yazmayi dener, geri okur, DEGISTI mi*/
+/*      diye karsilastirir                                             */
+/*   3) klip suresini degistirmeyi dener (obek suresi icin sart)       */
+/*   4) Motion Position/Scale yazmayi dener (konum/boyut karari 9b)    */
+/* ------------------------------------------------------------------ */
+
+function PP_probeMechanics(payloadJson) {
+  var payload = PP_parseJson(payloadJson) || {};
+  var logger = new PP_Logger(payload.logPath);
+
+  try {
+    logger.add("=== PROBE 7: KLIP MEKANIGI PROVASI ===");
+    logger.add("Zaman: " + new Date().toString());
+    logger.add("native JSON var mi: " + PP_hasNativeJSON());
+    logger.add("mogrt: " + payload.mogrtPath);
+
+    var seq = PP_activeSequence(logger);
+    if (!seq) return PP_result(false, "Aktif sequence yok.");
+
+    var mf = new File(payload.mogrtPath);
+    if (!mf.exists) return PP_result(false, "MOGRT bulunamadi: " + payload.mogrtPath);
+
+    var vTrack = (payload.videoTrackIndex === undefined || payload.videoTrackIndex === null) ? 0 : payload.videoTrackIndex;
+    var at = payload.atSeconds ? Number(payload.atSeconds) : 0;
+    var wantSeconds = payload.durationSeconds ? Number(payload.durationSeconds) : 1.4;
+    var testText = payload.testText || "ODIUM ÇĞİÖŞÜ 123";
+
+    logger.step(1, "importMGT");
+    var clip = null;
+    try {
+      clip = seq.importMGT(mf.fsName, PP_secondsToTicks(at), vTrack, 0);
+    } catch (eI) {
+      logger.add("  HATA: " + eI);
+    }
+    if (!clip) return PP_result(false, "importMGT klip dondurmedi.");
+    logger.add("  klip adi=" + clip.name + " isMGT=" + clip.isMGT());
+
+    var comp = null;
+    try { comp = clip.getMGTComponent(); } catch (eG) {}
+    if (!comp) return PP_result(false, "getMGTComponent null - AE sablonu kullan.");
+
+    var count = comp.properties.numItems;
+    logger.add("  parametre sayisi=" + count);
+
+    /* --- 2. TAM DEGER DOKUMU (kirpma yok) --- */
+    logger.step(2, "TAM DEGER DOKUMU - kirpma yok");
+    var names = [];
+    for (var i = 0; i < count; i++) {
+      var dn = "?", vv = "<okunamadi>";
+      try { dn = String(comp.properties[i].displayName); } catch (eD) {}
+      try { vv = String(comp.properties[i].getValue()); } catch (eV) { vv = "<getValue HATA: " + eV + ">"; }
+      names.push(dn);
+      logger.add("");
+      logger.add("  ----- [" + i + "] \"" + dn + "\" -----");
+      logger.add("  " + vv);
+    }
+
+    /* --- 3. HER PARAMETREYE YAZMA DENEMESI --- */
+    logger.step(3, "YAZMA TESTI - her parametreye duz string, oncesi/sonrasi karsilastirma");
+    logger.add("  yazilacak metin: " + testText);
+    var changed = [];
+
+    for (var w = 0; w < count; w++) {
+      var before = null, after = null;
+      try { before = String(comp.properties[w].getValue()); } catch (eB) { before = null; }
+      if (before === null) {
+        logger.add("  [" + w + "] \"" + names[w] + "\" okunamadi, atlandi.");
+        continue;
+      }
+
+      var threw = "";
+      try {
+        comp.properties[w].setValue(testText, true);
+      } catch (eS) {
+        threw = String(eS);
+      }
+      try { after = String(comp.properties[w].getValue()); } catch (eA) { after = null; }
+
+      var didChange = (after !== null && after !== before);
+      var carriesText = (after !== null && after.indexOf("ODIUM") >= 0);
+
+      logger.add("  [" + w + "] \"" + names[w] + "\""
+        + " degisti=" + (didChange ? "EVET" : "hayir")
+        + " metin-icinde=" + (carriesText ? "EVET" : "hayir")
+        + (threw ? " HATA=" + threw : ""));
+
+      if (didChange) {
+        changed.push(w);
+        logger.add("      oncesi: " + (before.length > 300 ? before.substring(0, 300) + " ..." : before));
+        logger.add("      sonrasi: " + (after.length > 300 ? after.substring(0, 300) + " ..." : after));
+      }
+    }
+
+    logger.add("");
+    logger.add("  >>> DEGISEN PARAMETRE INDEXLERI: " + (changed.length ? changed.join(", ") : "HICBIRI"));
+    logger.add("  >>> Premiere'de klibe bak: yazi gercekten degisti mi? Program Monitor'e bak.");
+
+    /* --- 4. SURE DEGISTIRME --- */
+    logger.step(4, "SURE DEGISTIRME (obek suresi icin sart)");
+    try {
+      var startS = clip.start.seconds;
+      var endS = clip.end.seconds;
+      logger.add("  oncesi: start=" + startS + " end=" + endS + " sure=" + (endS - startS));
+
+      var targetEndTicks = PP_secondsToTicks(startS + wantSeconds);
+      logger.add("  hedef end=" + (startS + wantSeconds) + "s (tick " + targetEndTicks + ")");
+
+      var setWorked = false;
+
+      // A) Time nesnesi uzerinden ticks yazma
+      try {
+        var tObj = clip.end;
+        tObj.ticks = targetEndTicks;
+        clip.end = tObj;
+        setWorked = true;
+        logger.add("  A) clip.end.ticks + atama denendi.");
+      } catch (eA1) {
+        logger.add("  A) HATA: " + eA1);
+      }
+
+      var nowEnd = "?";
+      try { nowEnd = clip.end.seconds; } catch (eN) {}
+      logger.add("  sonrasi: end=" + nowEnd + " (hedef " + (startS + wantSeconds) + ")");
+
+      if (String(nowEnd) === String(endS)) {
+        logger.add("  >>> SURE DEGISMEDI. QE tarafi denenecek (qe trackItem.setEndPosition / move).");
+        try {
+          app.enableQE();
+          var qseq = qe.project.getActiveSequence();
+          var qtr = qseq.getVideoTrackAt(vTrack);
+          logger.add("  qe track numItems=" + qtr.numItems);
+          logger.add("  qe trackItem metodlari: " + PP_reflectList(qtr.getItemAt(0), "methods").join(" | "));
+        } catch (eQ) {
+          logger.add("  QE dokumu HATA: " + eQ);
+        }
+      } else {
+        logger.add("  >>> SURE DEGISTI. Yol A calisiyor.");
+      }
+    } catch (eDur) {
+      logger.add("  sure testi HATA: " + eDur);
+    }
+
+    /* --- 5. MOTION: konum ve boyut --- */
+    logger.step(5, "MOTION Position / Scale yazma (karar 9b)");
+    try {
+      var comps = clip.components;
+      var motion = null;
+      for (var mc = 0; mc < comps.numItems; mc++) {
+        var nm2 = "";
+        try { nm2 = String(comps[mc].displayName); } catch (eN2) {}
+        if (nm2 === "Motion") { motion = comps[mc]; break; }
+      }
+      if (!motion) {
+        logger.add("  Motion component bulunamadi.");
+      } else {
+        var mCount = motion.properties.numItems;
+        for (var mp = 0; mp < mCount; mp++) {
+          var mdn = "?";
+          try { mdn = String(motion.properties[mp].displayName); } catch (eMd) {}
+          if (mdn === "Position" || mdn === "Scale") {
+            var mBefore = "?";
+            try { mBefore = String(motion.properties[mp].getValue()); } catch (eMb) {}
+            var newVal = (mdn === "Scale") ? 60 : [0.5, 0.82];
+            var mThrew = "";
+            try {
+              motion.properties[mp].setValue(newVal, true);
+            } catch (eMs) {
+              mThrew = String(eMs);
+            }
+            var mAfter = "?";
+            try { mAfter = String(motion.properties[mp].getValue()); } catch (eMa) {}
+            logger.add("  " + mdn + ": oncesi=" + mBefore + " -> sonrasi=" + mAfter
+              + (mThrew ? "  HATA=" + mThrew : "")
+              + "  degisti=" + (mAfter !== mBefore ? "EVET" : "hayir"));
+          }
+        }
+      }
+    } catch (eMot) {
+      logger.add("  Motion testi HATA: " + eMot);
+    }
+
+    logger.step(6, "BITTI - klip timeline'da BIRAKILDI. Program Monitor'de yaziya bak, sonra Ctrl+Z.");
+
+    return PP_result(true, "Mekanik provasi bitti. Degisen parametre: "
+      + (changed.length ? changed.join(",") : "yok") + ". Log: " + (payload.logPath || ""),
+      '{"paramCount":' + count + ',"changedCount":' + changed.length + "}");
+  } catch (e) {
+    logger.add("KRITIK HATA: " + e);
+    return PP_result(false, "Mekanik probe hata verdi: " + e);
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* PROBE 4 - QE DOM: track ekleme / adlandirma / klip silme            */
 /* ------------------------------------------------------------------ */
 

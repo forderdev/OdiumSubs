@@ -97,6 +97,30 @@ Font düzenlemesi AE tarafında açılabiliyor — karar 10'daki risk kalktı.
 **Bonus:** `definition.json` panelden okunabilir (zip). Şablonun parametre isimlerini ve
 sırasını Premiere'e hiç dokunmadan öğrenebiliriz — M3'te parametre eşlemesi için kullanılacak.
 
+### Probe 6 — AE şablonu her iki cephede de kazanıyor
+
+| Şablon | authorApp | Medyan | MGT parametre |
+|---|---|---|---|
+| Sports Lower Third Side | aefx | **97 ms** | 12 |
+| Sports Graphic Overlay | aefx | **110 ms** | 9 |
+| Basic Title | ppro | 369 ms | yok |
+| Modern Web Caption | ppro | 378 ms | yok |
+
+**AE şablonu 4 kat hızlı.** Yeni tahminler: 350 klip 34 sn · 600 klip 58 sn ·
+**1400 klip 136 sn**. Karar 14'ün "uzun videoda animasyon yok" kısıtı büyük ölçüde kalktı;
+eşik uyarısı ve In/Out modu yine kalacak ama artık 40 dk da basılabilir.
+İlk import 2333 ms (soğuk yükleme), sonrakiler ~95 ms — şablon başına tek seferlik bedel.
+
+`ComponentParam` yüzeyi: `getValue/setValue`, `getColorValue/setColorValue`,
+`addKey/setValueAtKey/setTimeVarying/getKeys` — klip içi keyframe bile mümkün.
+
+**AÇIK: metin yazma mekaniği henüz doğrulanmadı.** Probe 6 index 0'daki `"Text"`
+parametresine yazıp aynısını geri okudu, ama Program Monitor'de yazı değişmedi
+(hâlâ "SPORTS TEAM"). Index 0 büyük ihtimalle grup başlığı. Gerçek metin `[1] "Title"` /
+`[2] "Subtitle"` parametrelerinin JSON blob değerinin içinde:
+`{"capPropFontEdit":true,"capPropFontSizeEdit":false,"fontEditValue":["BebasNeue-Regular"],...}`.
+Probe 7 bunu, klip süresi değiştirmeyi ve Motion Position/Scale yazmayı ölçüyor.
+
 ## Açık bilinmeyenler (M0 bunları ölçüyor)
 
 1. `importMGT` klip başına ms → animasyonlu modun eşiği

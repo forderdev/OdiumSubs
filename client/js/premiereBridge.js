@@ -63,6 +63,7 @@
     probeImportSpeed: function (payload) { return callHost("PP_probeImportSpeed", payload); },
     probeFastPlace: function (payload) { return callHost("PP_probeFastPlace", payload); },
     probeTemplates: function (payload) { return callHost("PP_probeTemplates", payload); },
+    probeMechanics: function (payload) { return callHost("PP_probeMechanics", payload); },
     probeQE: function (payload) { return callHost("PP_probeQE", payload); }
   };
 })(window);

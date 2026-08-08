@@ -268,6 +268,27 @@
       });
     });
 
+    $("mechPath").value = DEFAULT_TEMPLATES[0];
+
+    var mechBtn = $("btnMechanics");
+    mechBtn.dataset.primary = "1";
+    mechBtn.addEventListener("click", function () {
+      var btn = this;
+      runProbe(btn, "Klip mekanigi provasi", function () {
+        return PremiereBridge.probeMechanics({
+          logPath: logPathFor("07-mechanics.txt"),
+          mogrtPath: $("mechPath").value,
+          videoTrackIndex: Number($("mechTrack").value),
+          atSeconds: 0,
+          durationSeconds: Number($("mechDur").value),
+          testText: "ODIUM ÇĞİÖŞÜ 123"
+        }).then(function (res) {
+          readLogTail("07-mechanics.txt", 12000);
+          return res;
+        });
+      });
+    });
+
     $("btnQE").addEventListener("click", function () {
       var btn = this;
       runProbe(btn, "QE DOM probe", function () {
