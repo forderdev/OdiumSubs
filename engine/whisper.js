@@ -24,7 +24,9 @@ var DEFAULTS = {
   device: "auto",        // auto | cuda | cpu
   computeType: "",       // bos = surucuye birak
   vad: true,
-  wordTimestamps: true
+  wordTimestamps: true,
+  printProgress: true,   // ilerleme cubugu - panelde yuzde gostermek icin
+  beepOff: true          // bitince bip calmasin
 };
 
 /* ------------------------------------------------------------------ */
@@ -146,6 +148,10 @@ function buildArgs(audioPath, outputDir, options) {
 
   if (opt.wordTimestamps) args.push("--word_timestamps", "True");
   if (opt.vad) args.push("--vad_filter", "True");
+
+  // Degersiz bayraklar (store_true). --help ile dogrulandi.
+  if (opt.printProgress !== false) args.push("--print_progress");
+  if (opt.beepOff !== false) args.push("--beep_off");
 
   if (opt.device && opt.device !== "auto") args.push("--device", String(opt.device));
   if (opt.computeType) args.push("--compute_type", String(opt.computeType));
@@ -286,15 +292,20 @@ function transcribe(options) {
     });
 
     proc.on("close", function (code) {
-      if (code !== 0) {
-        reject(new Error("Whisper hata verdi (kod " + code + "):\n" + tail.slice(-8).join("\n")));
-        return;
-      }
-
+      /*
+        Cikis kodu tek basina karar veremiyor. Olculen davranis: r245.4 isini
+        bitirip JSON'u yaziyor, sonra kapanirken 0xC0000409 (3221226505,
+        stack buffer overrun) ile cokuyor - PyInstaller ile paketlenmis
+        araclarda bilinen bir kapanis hatasi. Cikti gecerliyse basarili say,
+        kodu sadece logla.
+      */
       var jsonPath = expectedJsonPath(audioPath, outputDir);
+
       if (!jsonPath) {
-        reject(new Error("Whisper bitti ama JSON cikti bulunamadi. Aranan klasor: " + outputDir
-          + "\nSon satirlar:\n" + tail.slice(-8).join("\n")));
+        reject(new Error(
+          (code === 0 ? "Whisper bitti ama JSON cikti bulunamadi." : "Whisper hata verdi (kod " + code + ").")
+          + " Aranan klasor: " + outputDir + "\nSon satirlar:\n" + tail.slice(-8).join("\n")
+        ));
         return;
       }
 
@@ -302,8 +313,13 @@ function transcribe(options) {
       try {
         parsed = parseWhisperJson(fs.readFileSync(jsonPath, "utf8"));
       } catch (e) {
-        reject(new Error("Whisper JSON'u okunamadi (" + jsonPath + "): " + e.message));
+        reject(new Error("Whisper JSON'u okunamadi (" + jsonPath + "): " + e.message
+          + (code !== 0 ? " (cikis kodu " + code + ")" : "")));
         return;
+      }
+
+      if (code !== 0 && options.onLog) {
+        options.onLog("UYARI: whisper " + code + " koduyla kapandi ama cikti gecerli, devam ediliyor.");
       }
 
       if (!parsed.hasWordTimestamps) {
