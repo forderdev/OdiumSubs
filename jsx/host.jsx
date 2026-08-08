@@ -1295,6 +1295,194 @@ function PP_probeMechanics(payloadJson) {
 }
 
 /* ------------------------------------------------------------------ */
+/* PROBE 8 - DOGRU YAZMA YOLU (M0'in son parcasi)                      */
+/*                                                                     */
+/* Probe 7 sunu gosterdi: type-6 parametreye duz string yazinca blob'un*/
+/* tamami eziliyor, font/boyut bilgisi kayboluyor. Dogrusu blob'u      */
+/* okuyup icindeki alanlari degistirip geri yazmak:                    */
+/*   textEditValue      -> yazi                                        */
+/*   fontTextRunLength  -> yazinin karakter sayisi (yoksa stil bozulur)*/
+/*   fontEditValue      -> font (PostScript adi)                       */
+/*   fontSizeEditValue  -> boyut                                       */
+/* Ayrica renk (setColorValue) ve checkbox (boolean) yollari test edilir*/
+/* ------------------------------------------------------------------ */
+
+function PP_probeTextWrite(payloadJson) {
+  var payload = PP_parseJson(payloadJson) || {};
+  var logger = new PP_Logger(payload.logPath);
+
+  try {
+    logger.add("=== PROBE 8: DOGRU YAZMA YOLU ===");
+    logger.add("Zaman: " + new Date().toString());
+
+    var seq = PP_activeSequence(logger);
+    if (!seq) return PP_result(false, "Aktif sequence yok.");
+
+    var mf = new File(payload.mogrtPath);
+    if (!mf.exists) return PP_result(false, "MOGRT bulunamadi.");
+
+    var vTrack = (payload.videoTrackIndex === undefined || payload.videoTrackIndex === null) ? 0 : payload.videoTrackIndex;
+    var testText = payload.testText || "Merhaba dünya ÇĞİÖŞÜ";
+    var wantFont = payload.font || "";
+    var wantSize = payload.fontSize ? Number(payload.fontSize) : 0;
+
+    logger.step(1, "importMGT");
+    var clip = seq.importMGT(mf.fsName, PP_secondsToTicks(payload.atSeconds || 0), vTrack, 0);
+    if (!clip) return PP_result(false, "importMGT klip dondurmedi.");
+    var comp = clip.getMGTComponent();
+    if (!comp) return PP_result(false, "getMGTComponent null.");
+
+    var count = comp.properties.numItems;
+    logger.add("  parametre sayisi=" + count);
+
+    logger.step(2, "metin tasiyan parametreleri bul (textEditValue iceren blob)");
+    var textParams = [];
+    for (var i = 0; i < count; i++) {
+      var raw = "";
+      try { raw = String(comp.properties[i].getValue()); } catch (e1) { continue; }
+      if (raw.indexOf("textEditValue") < 0) continue;
+      var dn = "?";
+      try { dn = String(comp.properties[i].displayName); } catch (e2) {}
+      textParams.push({ index: i, name: dn, raw: raw });
+      logger.add("  [" + i + "] \"" + dn + "\" -> metin parametresi");
+    }
+
+    if (!textParams.length) {
+      logger.add("  HICBIRI. Bu sablonda metin parametresi bulunamadi.");
+      return PP_result(false, "Metin parametresi yok.");
+    }
+
+    logger.step(3, "BLOB DUZENLEYEREK YAZMA");
+    var writeResults = [];
+
+    for (var t = 0; t < textParams.length; t++) {
+      var tp = textParams[t];
+      logger.add("");
+      logger.add("  --- [" + tp.index + "] \"" + tp.name + "\" ---");
+
+      var obj = null;
+      try {
+        obj = PP_parseJson(tp.raw);
+      } catch (eParse) {
+        logger.add("    blob parse edilemedi: " + eParse);
+      }
+      if (!obj) {
+        logger.add("    ATLANDI (parse yok).");
+        continue;
+      }
+
+      var oldText = String(obj.textEditValue);
+      var oldFont = (obj.fontEditValue && obj.fontEditValue.length) ? String(obj.fontEditValue[0]) : "?";
+      var oldSize = (obj.fontSizeEditValue && obj.fontSizeEditValue.length) ? String(obj.fontSizeEditValue[0]) : "?";
+      logger.add("    oncesi: text=\"" + oldText + "\" font=" + oldFont + " boyut=" + oldSize
+        + " runLength=" + (obj.fontTextRunLength ? obj.fontTextRunLength[0] : "?"));
+
+      obj.textEditValue = testText;
+      // Stilin tum yaziya uygulanmasi icin run uzunlugu yeni metnin uzunlugu olmali.
+      obj.fontTextRunLength = [testText.length];
+      if (wantFont) obj.fontEditValue = [wantFont];
+      if (wantSize) obj.fontSizeEditValue = [wantSize];
+
+      var out = "";
+      try {
+        out = JSON.stringify(obj);
+      } catch (eStr) {
+        logger.add("    JSON.stringify HATA: " + eStr);
+        continue;
+      }
+      logger.add("    yazilacak: " + out);
+
+      var threw = "";
+      try {
+        comp.properties[tp.index].setValue(out, true);
+      } catch (eSet) {
+        threw = String(eSet);
+        logger.add("    setValue HATA: " + threw);
+      }
+
+      var back = "";
+      try { back = String(comp.properties[tp.index].getValue()); } catch (eBk) { back = "<okunamadi>"; }
+      logger.add("    geri okunan: " + back);
+
+      var backObj = null;
+      try { backObj = PP_parseJson(back); } catch (eBp) {}
+
+      var textOk = false, fontKept = false;
+      if (backObj) {
+        textOk = (String(backObj.textEditValue) === testText);
+        fontKept = !!(backObj.fontEditValue && backObj.fontEditValue.length);
+        logger.add("    SONUC: metin dogru=" + (textOk ? "EVET" : "HAYIR")
+          + " | font korundu=" + (fontKept ? "EVET" : "HAYIR")
+          + (fontKept ? " (" + backObj.fontEditValue[0] + ")" : ""));
+      } else {
+        logger.add("    SONUC: geri okunan blob degil - yapi bozuldu.");
+      }
+
+      writeResults.push({ index: tp.index, textOk: textOk, fontKept: fontKept });
+    }
+
+    logger.step(4, "RENK YAZMA (setColorValue)");
+    for (var c = 0; c < count; c++) {
+      var cdn = "?";
+      try { cdn = String(comp.properties[c].displayName); } catch (eC1) {}
+      if (String(cdn).toLowerCase().indexOf("color") < 0) continue;
+
+      var cBefore = "?";
+      try { cBefore = String(comp.properties[c].getValue()); } catch (eC2) {}
+      var cThrew = "";
+      try {
+        // Odium altin: 216, 162, 74
+        comp.properties[c].setColorValue(216, 162, 74, 255, true);
+      } catch (eC3) {
+        cThrew = String(eC3);
+      }
+      var cAfter = "?";
+      try { cAfter = String(comp.properties[c].getValue()); } catch (eC4) {}
+      var cRead = "?";
+      try { cRead = String(comp.properties[c].getColorValue()); } catch (eC5) { cRead = "<getColorValue HATA>"; }
+
+      logger.add("  \"" + cdn + "\" " + cBefore + " -> " + cAfter
+        + " | getColorValue=" + cRead
+        + (cThrew ? " HATA=" + cThrew : "")
+        + " | degisti=" + (cAfter !== cBefore ? "EVET" : "hayir"));
+      break; // tek renk yeter
+    }
+
+    logger.step(5, "CHECKBOX YAZMA (boolean)");
+    for (var b = 0; b < count; b++) {
+      var bdn = "?", bRaw = "";
+      try { bdn = String(comp.properties[b].displayName); } catch (eB1) {}
+      try { bRaw = String(comp.properties[b].getValue()); } catch (eB2) { continue; }
+      if (bRaw !== "false" && bRaw !== "true") continue;
+
+      var bThrew = "";
+      try {
+        comp.properties[b].setValue(true, true);
+      } catch (eB3) {
+        bThrew = String(eB3);
+      }
+      var bAfter = "?";
+      try { bAfter = String(comp.properties[b].getValue()); } catch (eB4) {}
+      logger.add("  \"" + bdn + "\" " + bRaw + " -> " + bAfter
+        + (bThrew ? " HATA=" + bThrew : "")
+        + " | degisti=" + (bAfter !== bRaw ? "EVET" : "hayir"));
+      break;
+    }
+
+    logger.step(6, "BITTI - Program Monitor'e bak: yazi \"" + testText + "\" oldu mu, font/boyut duruyor mu.");
+
+    var okCount = 0;
+    for (var r = 0; r < writeResults.length; r++) if (writeResults[r].textOk) okCount++;
+
+    return PP_result(true, okCount + "/" + writeResults.length + " metin parametresi dogru yazildi. Log: " + (payload.logPath || ""),
+      '{"textParams":' + writeResults.length + ',"textOk":' + okCount + "}");
+  } catch (e) {
+    logger.add("KRITIK HATA: " + e);
+    return PP_result(false, "Yazma probe'u hata verdi: " + e);
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* PROBE 4 - QE DOM: track ekleme / adlandirma / klip silme            */
 /* ------------------------------------------------------------------ */
 

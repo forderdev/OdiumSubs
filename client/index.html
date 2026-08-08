@@ -141,6 +141,35 @@
     <button id="btnMechanics" class="btn primary">Mekanigi Test Et</button>
   </section>
 
+  <section class="card accent">
+    <h2>8 &middot; Dogru yazma yolu</h2>
+    <p class="hint">
+      Probe 7'de duz string yazinca blob eziliyor, font/boyut kayboluyordu.
+      Bu probe blob'u okuyup <code>textEditValue</code> + <code>fontTextRunLength</code>
+      (+ istege bagli font ve boyut) alanlarini degistirip geri yaziyor.
+      Renk <code>setColorValue</code> ve checkbox boolean yollari da test edilir.
+    </p>
+    <label>AE sablonu yolu</label>
+    <input type="text" id="wrPath" spellcheck="false">
+    <label>Yazilacak metin</label>
+    <input type="text" id="wrText" value="Merhaba dünya ÇĞİÖŞÜ">
+    <div class="row">
+      <div class="col">
+        <label>Font (bos = degistirme)</label>
+        <input type="text" id="wrFont" value="" spellcheck="false">
+      </div>
+      <div class="col">
+        <label>Boyut (0 = degistirme)</label>
+        <input type="number" id="wrSize" value="0" min="0">
+      </div>
+      <div class="col">
+        <label>Video track</label>
+        <input type="number" id="wrTrack" value="0" min="0">
+      </div>
+    </div>
+    <button id="btnTextWrite" class="btn primary">Dogru Yazmayi Test Et</button>
+  </section>
+
   <section class="card">
     <h2>4 &middot; QE DOM (track ekle / adlandir)</h2>
     <p class="hint">

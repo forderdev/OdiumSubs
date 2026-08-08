@@ -289,6 +289,28 @@
       });
     });
 
+    $("wrPath").value = DEFAULT_TEMPLATES[0];
+
+    var wrBtn = $("btnTextWrite");
+    wrBtn.dataset.primary = "1";
+    wrBtn.addEventListener("click", function () {
+      var btn = this;
+      runProbe(btn, "Dogru yazma testi", function () {
+        return PremiereBridge.probeTextWrite({
+          logPath: logPathFor("08-text-write.txt"),
+          mogrtPath: $("wrPath").value,
+          videoTrackIndex: Number($("wrTrack").value),
+          atSeconds: 0,
+          testText: $("wrText").value,
+          font: $("wrFont").value,
+          fontSize: Number($("wrSize").value)
+        }).then(function (res) {
+          readLogTail("08-text-write.txt", 10000);
+          return res;
+        });
+      });
+    });
+
     $("btnQE").addEventListener("click", function () {
       var btn = this;
       runProbe(btn, "QE DOM probe", function () {
