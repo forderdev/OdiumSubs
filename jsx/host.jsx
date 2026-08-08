@@ -511,8 +511,34 @@ function PP_probeMogrt(payloadJson) {
     }
 
     if (!comp) {
-      logger.add("HATA: MGT component alinamadi.");
-      return PP_result(false, "getMGTComponent basarisiz. Log: " + payload.logPath);
+      logger.add("getMGTComponent bos dondu. YEDEK: tum component'ler ve parametreleri dokuluyor.");
+      logger.add("(MOGRT parametreleri buyuk ihtimalle bu listede bir component'in altinda.)");
+      try {
+        var allComps = clip.components;
+        logger.add("  components.numItems=" + allComps.numItems);
+        for (var ac = 0; ac < allComps.numItems; ac++) {
+          var one = allComps[ac];
+          var oneName = "?";
+          try { oneName = one.displayName; } catch (eOn) {}
+          var oneCount = 0;
+          try { oneCount = one.properties.numItems; } catch (eOc) {}
+          logger.add("  --- component[" + ac + "] \"" + oneName + "\" parametre=" + oneCount);
+          try {
+            for (var op = 0; op < oneCount; op++) {
+              var opd = "?", opv = "?";
+              try { opd = one.properties[op].displayName; } catch (eOd) {}
+              try { opv = String(one.properties[op].getValue()); } catch (eOv) { opv = "<getValue HATA>"; }
+              if (opv && opv.length > 160) opv = opv.substring(0, 160) + " ...[kisaltildi]";
+              logger.add("      [" + op + "] \"" + opd + "\" = " + opv);
+            }
+          } catch (eOp) {
+            logger.add("      parametreler okunamadi: " + eOp);
+          }
+        }
+      } catch (eAll) {
+        logger.add("  component dokumu HATA: " + eAll);
+      }
+      return PP_result(false, "getMGTComponent bos dondu - yedek dokum log'da. Log: " + payload.logPath);
     }
 
     PP_dumpInto(logger, "mgtComponent", comp);
@@ -685,6 +711,385 @@ function PP_probeImportSpeed(payloadJson) {
   } catch (e) {
     logger.add("KRITIK HATA: " + e);
     return PP_result(false, "Hiz probe'u hata verdi: " + e);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* PROBE 5 - HIZLI YOL: importMGT yerine projectItem + insertClip      */
+/*                                                                     */
+/* Probe 3 medyan 427 ms/klip verdi -> 1400 klip = 10 dk. Kullanilamaz. */
+/* Hipotez: importMGT ilk cagrida .mogrt'i acip projeye bir item olarak */
+/* dusuruyor. Oyleyse kalan klipleri o hazir item'dan insertClip /      */
+/* overwriteClip ile basmak cok daha ucuz olmali.                      */
+/* Bu probe hipotezi olcer; dogruysa M3'un tum yerlestirme stratejisi   */
+/* degisir.                                                            */
+/* ------------------------------------------------------------------ */
+
+function PP_rootItems() {
+  var out = [];
+  try {
+    var root = app.project.rootItem;
+    for (var i = 0; i < root.children.numItems; i++) {
+      var it = root.children[i];
+      var nm = "?", nid = "?", tp = "?";
+      try { nm = it.name; } catch (e1) {}
+      try { nid = String(it.nodeId); } catch (e2) {}
+      try { tp = String(it.type); } catch (e3) {}
+      out.push({ item: it, name: nm, nodeId: nid, type: tp });
+    }
+  } catch (e) {}
+  return out;
+}
+
+function PP_median(arr) {
+  if (!arr.length) return 0;
+  var c = [];
+  for (var i = 0; i < arr.length; i++) c.push(arr[i]);
+  c.sort(function (a, b) { return a - b; });
+  return c[Math.floor(c.length / 2)];
+}
+
+function PP_probeFastPlace(payloadJson) {
+  var payload = PP_parseJson(payloadJson) || {};
+  var logger = new PP_Logger(payload.logPath);
+
+  try {
+    logger.add("=== PROBE 5: HIZLI YERLESTIRME YOLU ===");
+    logger.add("Zaman: " + new Date().toString());
+
+    var seq = PP_activeSequence(logger);
+    if (!seq) return PP_result(false, "Aktif sequence yok.");
+
+    var mf = new File(payload.mogrtPath);
+    if (!mf.exists) {
+      logger.add("HATA: mogrt yok: " + payload.mogrtPath);
+      return PP_result(false, "MOGRT dosyasi bulunamadi.");
+    }
+
+    var count = payload.count ? Number(payload.count) : 25;
+    var vTrack = (payload.videoTrackIndex === undefined || payload.videoTrackIndex === null) ? 0 : payload.videoTrackIndex;
+    var gap = payload.gapSeconds ? Number(payload.gapSeconds) : 2;
+    var base = payload.startAtSeconds ? Number(payload.startAtSeconds) : 0;
+
+    logger.step(1, "import oncesi proje kok item'lari");
+    var before = PP_rootItems();
+    logger.add("  kok item sayisi: " + before.length);
+    var beforeIds = {};
+    for (var b = 0; b < before.length; b++) beforeIds[before[b].nodeId] = true;
+
+    logger.step(2, "referans olcum: importMGT x1");
+    var tA = new Date().getTime();
+    var seedClip = null;
+    try {
+      seedClip = seq.importMGT(mf.fsName, PP_secondsToTicks(base), vTrack, 0);
+    } catch (eImp) {
+      logger.add("  importMGT HATA: " + eImp);
+    }
+    var importMs = new Date().getTime() - tA;
+    logger.add("  importMGT tek klip = " + importMs + " ms, clip=" + PP_typeName(seedClip));
+    if (!seedClip) return PP_result(false, "importMGT klip dondurmedi.");
+
+    logger.step(3, "import sonrasi yeni kok item'lar");
+    var after = PP_rootItems();
+    logger.add("  kok item sayisi: " + after.length + " (fark " + (after.length - before.length) + ")");
+
+    var newItems = [];
+    for (var a = 0; a < after.length; a++) {
+      if (!beforeIds[after[a].nodeId]) {
+        newItems.push(after[a]);
+        logger.add("  YENI item: \"" + after[a].name + "\" type=" + after[a].type + " nodeId=" + after[a].nodeId);
+      }
+    }
+
+    logger.step(4, "yerlesen klibin projectItem'i");
+    var seedItem = null;
+    try {
+      seedItem = seedClip.projectItem;
+      logger.add("  clip.projectItem = " + PP_typeName(seedItem));
+      if (seedItem) {
+        logger.add("  adi: " + seedItem.name);
+        PP_dumpInto(logger, "seed projectItem", seedItem);
+      }
+    } catch (ePi) {
+      logger.add("  clip.projectItem HATA: " + ePi);
+    }
+
+    if (!seedItem && newItems.length) {
+      seedItem = newItems[0].item;
+      logger.add("  clip.projectItem yok - yeni kok item kullanilacak: " + newItems[0].name);
+    }
+
+    if (!seedItem) {
+      logger.add("SONUC: MOGRT projeye item olarak dusmuyor. Hizli yol YOK.");
+      logger.add("Bu durumda tek secenek importMGT (427 ms/klip) veya klasik altyazi.");
+      return PP_result(false, "MOGRT icin projectItem bulunamadi - hizli yol yok. Log: " + payload.logPath);
+    }
+
+    logger.step(5, "hedef track yuzeyi (insertClip / overwriteClip var mi)");
+    var track = null;
+    try {
+      track = seq.videoTracks[vTrack];
+      PP_dumpInto(logger, "videoTrack[" + vTrack + "]", track);
+    } catch (eTr) {
+      logger.add("  track alinamadi: " + eTr);
+      return PP_result(false, "Hedef track alinamadi.");
+    }
+
+    logger.step(6, "overwriteClip ile " + count + " klip - OLCUM");
+    var overMs = [];
+    var overOk = 0;
+    var overFail = 0;
+    var firstOverError = "";
+
+    for (var i = 0; i < count; i++) {
+      var at = base + gap + (i * gap);
+      var t0 = new Date().getTime();
+      var placed = false;
+      try {
+        track.overwriteClip(seedItem, PP_secondsToTicks(at));
+        placed = true;
+      } catch (eO1) {
+        if (!firstOverError) firstOverError = "ticks: " + eO1;
+        try {
+          track.overwriteClip(seedItem, at);
+          placed = true;
+        } catch (eO2) {
+          if (firstOverError.indexOf("saniye") < 0) firstOverError += " | saniye: " + eO2;
+        }
+      }
+      overMs.push(new Date().getTime() - t0);
+      if (placed) overOk++; else overFail++;
+    }
+
+    if (firstOverError) logger.add("  ilk overwriteClip hatasi -> " + firstOverError);
+
+    var overMedian = PP_median(overMs);
+    logger.add("  yerlesen=" + overOk + " basarisiz=" + overFail);
+    logger.add("  medyan=" + overMedian + " ms/klip");
+
+    logger.step(7, "KARSILASTIRMA");
+    logger.add("  importMGT      : " + importMs + " ms/klip");
+    logger.add("  overwriteClip  : " + overMedian + " ms/klip");
+    if (overOk > 0 && overMedian > 0) {
+      logger.add("  kazanc: " + Math.round(importMs / overMedian) + "x");
+      logger.add("  --- overwriteClip ile tahminler ---");
+      logger.add("   350 klip = " + Math.round(overMedian * 350 / 1000) + " sn");
+      logger.add("   600 klip = " + Math.round(overMedian * 600 / 1000) + " sn");
+      logger.add("  1400 klip = " + Math.round(overMedian * 1400 / 1000) + " sn");
+    }
+
+    logger.step(8, "KOPYA KLIPLERIN MGT PARAMETRELERI BAGIMSIZ MI?");
+    logger.add("  KRITIK: kopyalar ayni project item'dan geldigi icin metinleri");
+    logger.add("  birbirine bagli olabilir. Bagliysa hizli yol ise yaramaz.");
+    try {
+      var clips = track.clips;
+      logger.add("  track.clips.numItems=" + clips.numItems);
+      var tested = 0;
+      for (var c = 0; c < clips.numItems && tested < 2; c++) {
+        var cl = clips[c];
+        var comp = null;
+        try { comp = (typeof cl.getMGTComponent === "function") ? cl.getMGTComponent() : null; } catch (eG) {}
+        if (!comp) continue;
+        tested++;
+        logger.add("  klip[" + c + "] MGT component VAR, parametre sayisi=" + comp.properties.numItems);
+        for (var pi = 0; pi < comp.properties.numItems; pi++) {
+          var dn = "?";
+          try { dn = comp.properties[pi].displayName; } catch (eD) {}
+          logger.add("     [" + pi + "] " + dn);
+        }
+      }
+      if (tested === 0) {
+        logger.add("  >>> Hicbir klipte getMGTComponent yok. Probe 2'deki hatanin ayni sebebi.");
+      }
+    } catch (eC) {
+      logger.add("  klip taramasi HATA: " + eC);
+    }
+
+    logger.step(9, "BITTI - test klipleri timeline'da BIRAKILDI. Ctrl+Z.");
+
+    var extra = '{"importMs":' + importMs + ',"overwriteMedianMs":' + overMedian
+      + ',"placed":' + overOk + ',"failed":' + overFail + "}";
+    return PP_result(true, "importMGT " + importMs + " ms vs overwriteClip " + overMedian + " ms (" + overOk + "/" + count + ").", extra);
+  } catch (e) {
+    logger.add("KRITIK HATA: " + e);
+    return PP_result(false, "Hizli yol probe'u hata verdi: " + e);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* PROBE 6 - SABLON KARSILASTIRMA: AE (aefx) vs Premiere (ppro)        */
+/*                                                                     */
+/* Probe 2'de getMGTComponent() null dondu. Sebep bulundu: denenen     */
+/* sablon Premiere'de yazilmis (definition.json -> authorApp:"ppro"),  */
+/* timeline'a duz Premiere grafigi olarak aciliyor, Essential Graphics */
+/* parametresi tasimiyor. AE'de yazilmis olanda (authorApp:"aefx")     */
+/* clientControls[] gercek parametre listesi ve font duzenleme var.    */
+/*                                                                     */
+/* Bu probe her sablon icin: import suresi + getMGTComponent + tam     */
+/* parametre dokumu + metin yazma testi.                               */
+/* ------------------------------------------------------------------ */
+
+function PP_probeTemplates(payloadJson) {
+  var payload = PP_parseJson(payloadJson) || {};
+  var logger = new PP_Logger(payload.logPath);
+
+  try {
+    logger.add("=== PROBE 6: SABLON KARSILASTIRMA ===");
+    logger.add("Zaman: " + new Date().toString());
+
+    var seq = PP_activeSequence(logger);
+    if (!seq) return PP_result(false, "Aktif sequence yok.");
+
+    var paths = payload.paths || [];
+    if (!paths.length) return PP_result(false, "Sablon listesi bos.");
+
+    var vTrack = (payload.videoTrackIndex === undefined || payload.videoTrackIndex === null) ? 0 : payload.videoTrackIndex;
+    var speedRuns = payload.speedRuns ? Number(payload.speedRuns) : 5;
+    var cursor = payload.startAtSeconds ? Number(payload.startAtSeconds) : 0;
+    var gap = payload.gapSeconds ? Number(payload.gapSeconds) : 4;
+
+    var summary = [];
+
+    for (var t = 0; t < paths.length; t++) {
+      var p = paths[t];
+      logger.add("");
+      logger.add("################################################");
+      logger.add("# SABLON " + (t + 1) + "/" + paths.length);
+      logger.add("# " + p);
+      logger.add("################################################");
+
+      var mf = new File(p);
+      if (!mf.exists) {
+        logger.add("  ATLANDI: dosya yok.");
+        summary.push({ path: p, ok: false, note: "dosya yok" });
+        continue;
+      }
+
+      /* --- hiz --- */
+      logger.step(1, "hiz olcumu (" + speedRuns + " import)");
+      var times = [];
+      var firstClip = null;
+      for (var r = 0; r < speedRuns; r++) {
+        var at = cursor;
+        cursor += gap;
+        var t0 = new Date().getTime();
+        var c = null;
+        try {
+          c = seq.importMGT(mf.fsName, PP_secondsToTicks(at), vTrack, 0);
+        } catch (eI) {
+          if (r === 0) logger.add("  import HATA: " + eI);
+        }
+        times.push(new Date().getTime() - t0);
+        if (!firstClip && c) firstClip = c;
+      }
+      var med = PP_median(times);
+      logger.add("  medyan=" + med + " ms/klip  (tum olcumler: " + times.join(", ") + ")");
+      logger.add("  tahmin  350 klip = " + Math.round(med * 350 / 1000) + " sn");
+      logger.add("  tahmin 1400 klip = " + Math.round(med * 1400 / 1000) + " sn");
+
+      if (!firstClip) {
+        logger.add("  klip donmedi, parametre testi atlandi.");
+        summary.push({ path: p, ok: false, note: "import basarisiz", medianMs: med });
+        continue;
+      }
+
+      /* --- MGT component --- */
+      logger.step(2, "isMGT() / getMGTComponent()");
+      var isMgt = "?";
+      try { isMgt = String(firstClip.isMGT()); } catch (eM) { isMgt = "<isMGT HATA>"; }
+      logger.add("  isMGT()=" + isMgt);
+      logger.add("  klip adi=" + firstClip.name);
+
+      var comp = null;
+      try { comp = firstClip.getMGTComponent(); } catch (eG) { logger.add("  getMGTComponent HATA: " + eG); }
+      logger.add("  getMGTComponent -> " + PP_typeName(comp));
+
+      if (!comp) {
+        logger.add("  >>> Essential Graphics parametresi YOK. Bu sablon plugin icin kullanilamaz.");
+        summary.push({ path: p, ok: false, note: "getMGTComponent null", medianMs: med, isMGT: isMgt });
+        continue;
+      }
+
+      /* --- parametreler --- */
+      logger.step(3, "PARAMETRE DOKUMU");
+      var count = 0;
+      var textIdx = -1;
+      try {
+        count = comp.properties.numItems;
+        logger.add("  parametre sayisi=" + count);
+        for (var i = 0; i < count; i++) {
+          var pr = comp.properties[i];
+          var dn = "?", vv = "?";
+          try { dn = pr.displayName; } catch (eD) {}
+          try { vv = String(pr.getValue()); } catch (eV) { vv = "<getValue HATA>"; }
+          if (vv && vv.length > 200) vv = vv.substring(0, 200) + " ...[kisaltildi]";
+          logger.add("  [" + i + "] \"" + dn + "\" = " + vv);
+          if (textIdx < 0) {
+            var low = String(dn).toLowerCase();
+            if (low === "text" || low === "metin" || low.indexOf("source text") >= 0) textIdx = i;
+          }
+        }
+        if (count > 0) PP_dumpInto(logger, "properties[0]", comp.properties[0]);
+      } catch (eP) {
+        logger.add("  parametre okuma HATA: " + eP);
+      }
+
+      /* --- metin yazma --- */
+      logger.step(4, "METIN YAZMA TESTI (index=" + textIdx + ")");
+      var writeOk = false;
+      if (textIdx >= 0) {
+        var testText = "ODIUM ÇĞİÖŞÜ test";
+        try {
+          comp.properties[textIdx].setValue(testText, true);
+          var back = "?";
+          try { back = String(comp.properties[textIdx].getValue()); } catch (eB) { back = "<geri okunamadi>"; }
+          if (back.length > 200) back = back.substring(0, 200) + " ...";
+          logger.add("  yazilan : " + testText);
+          logger.add("  okunan  : " + back);
+          writeOk = (back.indexOf("ODIUM") >= 0);
+          logger.add("  SONUC: " + (writeOk ? "METIN YAZILIYOR" : "yazma dogrulanamadi - degeri elle kontrol et"));
+        } catch (eS) {
+          logger.add("  setValue HATA: " + eS);
+        }
+      } else {
+        logger.add("  metin parametresi isimle bulunamadi.");
+      }
+
+      summary.push({
+        path: p, ok: true, medianMs: med, isMGT: isMgt,
+        paramCount: count, textIndex: textIdx, textWrite: writeOk
+      });
+    }
+
+    /* --- ozet --- */
+    logger.add("");
+    logger.add("================ OZET ================");
+    var extraParts = [];
+    for (var s = 0; s < summary.length; s++) {
+      var it = summary[s];
+      var nameOnly = String(it.path);
+      var slash = nameOnly.lastIndexOf("\\");
+      if (slash < 0) slash = nameOnly.lastIndexOf("/");
+      if (slash >= 0) nameOnly = nameOnly.substring(slash + 1);
+
+      logger.add(nameOnly);
+      logger.add("   medyan=" + (it.medianMs === undefined ? "-" : it.medianMs) + " ms"
+        + " | MGT param=" + (it.ok ? it.paramCount : "YOK")
+        + " | metin yazildi=" + (it.textWrite ? "EVET" : "hayir")
+        + (it.note ? " | " + it.note : ""));
+
+      extraParts.push('{"name":"' + PP_escapeJsonString(nameOnly) + '"'
+        + ',"medianMs":' + (it.medianMs === undefined ? 0 : it.medianMs)
+        + ',"paramCount":' + (it.paramCount === undefined ? 0 : it.paramCount)
+        + ',"textWrite":' + (it.textWrite ? "true" : "false") + "}");
+    }
+    logger.add("BITTI - test klipleri timeline'da BIRAKILDI. Ctrl+Z.");
+
+    return PP_result(true, paths.length + " sablon olculdu. Log: " + (payload.logPath || ""),
+      '{"templates":[' + extraParts.join(",") + "]}");
+  } catch (e) {
+    logger.add("KRITIK HATA: " + e);
+    return PP_result(false, "Sablon probe'u hata verdi: " + e);
   }
 }
 

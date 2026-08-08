@@ -69,6 +69,55 @@
     <button id="btnSpeed" class="btn primary">Hizi Olc</button>
   </section>
 
+  <section class="card accent">
+    <h2>5 &middot; Hizli yol: projectItem + overwriteClip</h2>
+    <p class="hint">
+      <b>importMGT 427 ms/klip cikti - uzun videoda kullanilamaz.</b>
+      Bu probe MOGRT'in projeye item olarak dusup dusmedigini, dustuyse
+      <code>overwriteClip</code> ile basmanin kac kat hizli oldugunu olcer.
+      Ayrica kopyalarin metin parametrelerinin birbirine bagli olup olmadigini kontrol eder.
+    </p>
+    <div class="row">
+      <div class="col">
+        <label>Klip sayisi</label>
+        <input type="number" id="fastCount" value="25" min="1" max="500">
+      </div>
+      <div class="col">
+        <label>Video track</label>
+        <input type="number" id="fastTrack" value="0" min="0">
+      </div>
+      <div class="col">
+        <label>Aralik (sn)</label>
+        <input type="number" id="fastGap" value="2" min="0.5" step="0.5">
+      </div>
+    </div>
+    <button id="btnFast" class="btn primary">Hizli Yolu Olc</button>
+  </section>
+
+  <section class="card accent">
+    <h2>6 &middot; AE vs Premiere sablonu</h2>
+    <p class="hint">
+      Probe 2'de <code>getMGTComponent</code> null dondu cunku o sablon Premiere'de
+      yazilmis (<code>authorApp: "ppro"</code>) - Essential Graphics parametresi tasimiyor.
+      Bu probe AE'de yazilmis bir sablonla (<code>aefx</code>) yan yana olcer:
+      parametreler geliyor mu, metin yazilabiliyor mu, hangisi daha hizli.
+      Her satira bir <code>.mogrt</code> yolu.
+    </p>
+    <label>Sablon yollari (her satira bir tane)</label>
+    <textarea id="tplPaths" rows="4" spellcheck="false"></textarea>
+    <div class="row">
+      <div class="col">
+        <label>Sablon basina import</label>
+        <input type="number" id="tplRuns" value="5" min="1" max="50">
+      </div>
+      <div class="col">
+        <label>Video track</label>
+        <input type="number" id="tplTrack" value="0" min="0">
+      </div>
+    </div>
+    <button id="btnTemplates" class="btn primary">Sablonlari Karsilastir</button>
+  </section>
+
   <section class="card">
     <h2>4 &middot; QE DOM (track ekle / adlandir)</h2>
     <p class="hint">

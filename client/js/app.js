@@ -13,7 +13,21 @@
   var path = nodeRequire ? nodeRequire("path") : null;
   var childProcess = nodeRequire ? nodeRequire("child_process") : null;
 
-  var DEFAULT_MOGRT = "D:\\Adobe\\Adobe Premiere Pro 2026\\Essential Graphics\\Captions and Subtitles\\Modern Web Caption.mogrt";
+  var EG = "D:\\Adobe\\Adobe Premiere Pro 2026\\Essential Graphics\\";
+  var DEFAULT_MOGRT = EG + "Captions and Subtitles\\Modern Web Caption.mogrt";
+
+  /*
+    Karsilastirma listesi:
+      - aefx (AE'de yazilmis)  -> Essential Graphics parametresi tasimasi beklenir
+      - ppro (Premiere'de)     -> duz grafik olarak aciliyor, parametre yok
+    Boyut farki da hiz uzerindeki etkiyi gosterir.
+  */
+  var DEFAULT_TEMPLATES = [
+    EG + "[AE] Sports Package\\Sports Lower Third Side.mogrt",   // aefx, 664 KB
+    EG + "[AE] Sports Package\\Sports Graphic Overlay.mogrt",    // aefx, 286 KB
+    EG + "Basic Title.mogrt",                                    // ppro, 380 KB
+    EG + "Captions and Subtitles\\Modern Web Caption.mogrt"      // ppro, 725 KB
+  ];
 
   var el = {};
   var logDir = "";
@@ -31,11 +45,43 @@
     el.pill.className = "pill" + (kind ? " " + kind : "");
   }
 
+  /*
+    CEP'in getSystemPath'i Windows'ta "file:\C:\..." gibi URL kirintisi
+    donduruyor; fs bunu tanimiyor. Temizle, tanimazsan panelin kendi
+    konumundan turet.
+  */
+  function normalizePath(raw) {
+    if (!raw) return "";
+    var s = String(raw);
+    s = s.replace(/^file:(\/\/)?/i, "");   // file:// veya file:
+    s = s.replace(/^[\\/]{1,3}(?=[A-Za-z]:)/, ""); // /C:/ veya \C:\ onundeki ayiricilar
+    try { s = decodeURIComponent(s); } catch (e) {}
+    s = s.replace(/\//g, "\\");
+    return s;
+  }
+
+  function extensionRoot() {
+    var fromCep = normalizePath(PremiereBridge.extensionPath());
+    if (fromCep && fs && fs.existsSync(fromCep)) return fromCep;
+
+    // Yedek: bu dosya <root>/client/js/app.js icinde.
+    try {
+      var here = normalizePath(window.location.pathname);
+      var root = path.resolve(path.dirname(here), "..", "..");
+      if (fs.existsSync(root)) return root;
+    } catch (e) {}
+
+    return fromCep || "";
+  }
+
   function ensureLogDir() {
     if (!fs || !path) return "";
     try {
-      var base = PremiereBridge.extensionPath();
-      if (!base) return "";
+      var base = extensionRoot();
+      if (!base) {
+        log("Uzanti kok klasoru bulunamadi.");
+        return "";
+      }
       var dir = path.join(base, ".probe");
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       return dir;
@@ -170,6 +216,53 @@
           startAtSeconds: 0
         }).then(function (res) {
           readLogTail("03-import-speed.txt", 4000);
+          return res;
+        });
+      });
+    });
+
+    var fastBtn = $("btnFast");
+    fastBtn.dataset.primary = "1";
+    fastBtn.addEventListener("click", function () {
+      var btn = this;
+      var count = Number($("fastCount").value);
+      runProbe(btn, "Hizli yol olcumu (" + count + " klip)", function () {
+        return PremiereBridge.probeFastPlace({
+          logPath: logPathFor("05-fast-place.txt"),
+          mogrtPath: $("mogrtPath").value,
+          count: count,
+          videoTrackIndex: Number($("fastTrack").value),
+          gapSeconds: Number($("fastGap").value),
+          startAtSeconds: 0
+        }).then(function (res) {
+          readLogTail("05-fast-place.txt", 8000);
+          return res;
+        });
+      });
+    });
+
+    $("tplPaths").value = DEFAULT_TEMPLATES.join("\n");
+
+    var tplBtn = $("btnTemplates");
+    tplBtn.dataset.primary = "1";
+    tplBtn.addEventListener("click", function () {
+      var btn = this;
+      var lines = $("tplPaths").value.split(/\r?\n/);
+      var paths = [];
+      for (var i = 0; i < lines.length; i++) {
+        var s = lines[i].replace(/^\s+|\s+$/g, "");
+        if (s) paths.push(s);
+      }
+      runProbe(btn, "Sablon karsilastirma (" + paths.length + " sablon)", function () {
+        return PremiereBridge.probeTemplates({
+          logPath: logPathFor("06-templates.txt"),
+          paths: paths,
+          speedRuns: Number($("tplRuns").value),
+          videoTrackIndex: Number($("tplTrack").value),
+          startAtSeconds: 0,
+          gapSeconds: 4
+        }).then(function (res) {
+          readLogTail("06-templates.txt", 10000);
           return res;
         });
       });

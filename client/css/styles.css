@@ -80,7 +80,7 @@ label {
   margin: 6px 0 3px;
 }
 
-input {
+input, textarea {
   width: 100%;
   background: var(--card-2);
   border: 1px solid var(--line);
@@ -90,7 +90,14 @@ input {
   font: inherit;
 }
 
-input:focus { outline: none; border-color: var(--gold); }
+textarea {
+  resize: vertical;
+  font: 11px/1.4 Consolas, "Courier New", monospace;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+input:focus, textarea:focus { outline: none; border-color: var(--gold); }
 
 .row { display: flex; gap: 8px; }
 .col { flex: 1; }

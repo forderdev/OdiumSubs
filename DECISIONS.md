@@ -53,6 +53,50 @@ Grilling oturumu sonucu, 2026-08-08. Değişirse buraya yazılır.
 - **M3 — MOGRT modu.** Şablon sözleşmesi, occurrence eşleme, tick matematiği, Motion konum/boyut, `ODIUM SUBS` yönetimi, eşik + In/Out.
 - **M4 — Paketleme.** Inno Setup setup.exe, GitHub `version.json` ile otomatik güncelleme, ilk çalıştırmada whisper/model indirme.
 
+## M0 ölçüm sonuçları (Premiere 26.0.2, gerçek proje)
+
+**Tick matematiği doğrulandı.** `15.32 s × 254016000000 = 3891525120000` — birebir.
+`timebase=10160640000` → 25 fps. Test projesinde `zeroPoint=0`.
+
+**Eşleme formülü doğrulandı.** Gerçek klip: `start=15.32`, `end=22.64`, `inPoint=85.72`,
+`outPoint=93.04`, `duration=7.32`. `end−start = out−in = duration` ✓.
+`getSpeed()=1` okunuyor, hız değişimi tespit edilebilir.
+
+**Seçim API'si:**
+- `app.getCurrentProjectViewSelection()` **`undefined` dönüyor** — kullanılamaz.
+- `app.getProjectViewIDs()` + `app.getProjectViewSelection(id)` çalışıyor.
+- `sequence.getSelection()` sağlam — seçili klibin video+audio parçasını ayrı ayrı verir
+  (aynı `nodeId`, `mediaType` farklı). Ana giriş yolu bu olacak.
+- `TrackItem` yüzeyinde `isMGT()`, `getMGTComponent()`, `getSpeed()`, `remove()` var.
+
+**`importMGT` hızı: medyan 433 ms/klip** (25 import, 389–649 ms arası).
+→ 350 klip ≈ 152 sn · 600 klip ≈ 260 sn · 1400 klip ≈ 606 sn.
+
+**Hızlı yol yok.** MOGRT projeye item olarak düşmüyor: `clip.projectItem = null`,
+kök item sayısı import öncesi/sonrası 34 → 34. Dolayısıyla `overwriteClip(projectItem)`
+ile ucuz çoğaltma mümkün değil.
+
+**QE DOM tam çalışıyor.** `addTracks(1,10,0,0,0,0)` → track 10→11, `setName("ODIUM SUBS")`
+yazıldı ve geri okundu. Kullanılabilir yüzey: `removeVideoTrack`, `removeEmptyVideoTracks`,
+`getVideoTrackAt().insert/overwrite/setName`, `trackItem.remove/move/moveToTrack/addVideoEffect/getProjectItem`.
+
+**MOGRT'ın iki cinsi var — kritik bulgu.** `.mogrt` bir zip; içindeki `definition.json`
+`authorApp` alanını taşıyor:
+
+| | `authorApp: "ppro"` | `authorApp: "aefx"` |
+|---|---|---|
+| İçerik | `project.prgraphic` | `project.aegraphic` |
+| Timeline'da | düz Premiere grafiği (Text + Shape component'leri) | Essential Graphics parametreli MOGRT |
+| `getMGTComponent()` | **null** | (ölçülecek — Probe 6) |
+| `fonteditinfo.capPropFontEdit` | `false` | **`true`** (`fontEditValue: "BebasNeue-Regular"`) |
+
+Premiere'de yazılan şablon plugin için kullanılamaz: `Source Text` opak bir blob olarak
+duruyor, Essential Graphics parametresi yok. **AE şablonu zorunlu** — karar 9 doğrulandı.
+Font düzenlemesi AE tarafında açılabiliyor — karar 10'daki risk kalktı.
+
+**Bonus:** `definition.json` panelden okunabilir (zip). Şablonun parametre isimlerini ve
+sırasını Premiere'e hiç dokunmadan öğrenebiliriz — M3'te parametre eşlemesi için kullanılacak.
+
 ## Açık bilinmeyenler (M0 bunları ölçüyor)
 
 1. `importMGT` klip başına ms → animasyonlu modun eşiği

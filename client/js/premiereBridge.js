@@ -61,6 +61,8 @@
     probeSelection: function (payload) { return callHost("PP_probeSelection", payload); },
     probeMogrt: function (payload) { return callHost("PP_probeMogrt", payload); },
     probeImportSpeed: function (payload) { return callHost("PP_probeImportSpeed", payload); },
+    probeFastPlace: function (payload) { return callHost("PP_probeFastPlace", payload); },
+    probeTemplates: function (payload) { return callHost("PP_probeTemplates", payload); },
     probeQE: function (payload) { return callHost("PP_probeQE", payload); }
   };
 })(window);
