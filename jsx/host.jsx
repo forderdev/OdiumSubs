@@ -195,6 +195,313 @@ function PP_activeSequence(logger) {
   return seq;
 }
 
+/* ================================================================== */
+/* URETIM FONKSIYONLARI (M2+)                                          */
+/* Asagidaki PROBE_ ile baslayan bolumler olcum icindi; bunlar gercek  */
+/* akista kullaniliyor.                                                */
+/* ================================================================== */
+
+function PP_jsonString(value) {
+  return '"' + PP_escapeJsonString(value) + '"';
+}
+
+function PP_seconds(timeObj) {
+  try {
+    var v = timeObj.seconds;
+    if (v === undefined || v === null) return null;
+    return Number(v);
+  } catch (e) {
+    return null;
+  }
+}
+
+/* Bir project item'i tanimlayan alanlar - panel bunlarla is goruyor. */
+function PP_projectItemJson(item) {
+  var name = "", mediaPath = "", nodeId = "", type = "";
+  try { name = item.name; } catch (e1) {}
+  try { mediaPath = item.getMediaPath(); } catch (e2) {}
+  try { nodeId = String(item.nodeId); } catch (e3) {}
+  try { type = String(item.type); } catch (e4) {}
+
+  return "{" + '"name":' + PP_jsonString(name)
+    + ',"mediaPath":' + PP_jsonString(mediaPath)
+    + ',"nodeId":' + PP_jsonString(nodeId)
+    + ',"type":' + PP_jsonString(type) + "}";
+}
+
+/*
+  Bir klibin sequence'deki yeri. mapToSequence bunlari kullaniyor:
+      seqTime = start + (sourceTime - inPoint)
+*/
+function PP_occurrenceJson(clip, trackIndex) {
+  var speed = 1;
+  try { if (typeof clip.getSpeed === "function") speed = Number(clip.getSpeed()); } catch (e1) {}
+
+  var reversed = false;
+  try { if (typeof clip.isSpeedReversed === "function") reversed = !!clip.isSpeedReversed(); } catch (e2) {}
+
+  var name = "";
+  try { name = clip.name; } catch (e3) {}
+
+  return "{" + '"trackIndex":' + trackIndex
+    + ',"name":' + PP_jsonString(name)
+    + ',"start":' + PP_seconds(clip.start)
+    + ',"end":' + PP_seconds(clip.end)
+    + ',"inPoint":' + PP_seconds(clip.inPoint)
+    + ',"outPoint":' + PP_seconds(clip.outPoint)
+    + ',"speed":' + speed
+    + ',"reversed":' + (reversed ? "true" : "false") + "}";
+}
+
+/* Project panelindeki secim. Probe 1: getCurrentProjectViewSelection undefined
+   donuyor, calisani getProjectViewIDs + getProjectViewSelection. */
+function PP_projectPanelSelection() {
+  var items = [];
+  try {
+    if (typeof app.getProjectViewIDs !== "function") return items;
+    var ids = app.getProjectViewIDs();
+    if (!ids || !ids.length) return items;
+
+    for (var v = 0; v < ids.length; v++) {
+      var sel = null;
+      try { sel = app.getProjectViewSelection(ids[v]); } catch (e1) { continue; }
+      if (!sel || !sel.length) continue;
+      for (var s = 0; s < sel.length; s++) items.push(sel[s]);
+    }
+  } catch (e) {}
+  return items;
+}
+
+/* Timeline'daki secim. Video ve audio parcasi ayri gelir; ayni nodeId'yi tasirlar. */
+function PP_timelineSelection(seq) {
+  var items = [];
+  try {
+    if (!seq || typeof seq.getSelection !== "function") return items;
+    var sel = seq.getSelection();
+    if (!sel || !sel.length) return items;
+    for (var i = 0; i < sel.length; i++) items.push(sel[i]);
+  } catch (e) {}
+  return items;
+}
+
+/* Verilen nodeId'ye ait tum video klipleri bulur. */
+function PP_findOccurrences(seq, nodeId) {
+  var parts = [];
+  if (!seq || !nodeId) return parts;
+
+  try {
+    for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+      var track = seq.videoTracks[t];
+      for (var c = 0; c < track.clips.numItems; c++) {
+        var clip = track.clips[c];
+        var id = null;
+        try { id = clip.projectItem ? String(clip.projectItem.nodeId) : null; } catch (e1) { continue; }
+        if (id !== nodeId) continue;
+        parts.push(PP_occurrenceJson(clip, t));
+      }
+    }
+  } catch (e) {}
+
+  return parts;
+}
+
+/*
+  Panelin ana giris noktasi: kullanici neyi sectiyse onu ve o klibin
+  timeline'daki tum kullanimlarini dondurur.
+
+  Oncelik timeline secimi - orada klip zaten yerinde, en kesin veri.
+  Timeline'da secim yoksa Project paneline bakilir.
+*/
+function PP_getSelection() {
+  try {
+    var seq = null;
+    try { seq = app.project.activeSequence; } catch (e0) {}
+
+    var source = "";
+    var projectItem = null;
+    var selectedOccurrence = null;
+
+    var timelineItems = PP_timelineSelection(seq);
+    for (var i = 0; i < timelineItems.length; i++) {
+      var clip = timelineItems[i];
+      var mediaType = "";
+      try { mediaType = String(clip.mediaType); } catch (e1) {}
+      if (mediaType && mediaType.toLowerCase().indexOf("video") < 0) continue;
+
+      try {
+        if (clip.projectItem) {
+          projectItem = clip.projectItem;
+          selectedOccurrence = PP_occurrenceJson(clip, -1);
+          source = "timeline";
+          break;
+        }
+      } catch (e2) {}
+    }
+
+    // Timeline'da sadece ses secilmisse (video/audio bagli), yine de item'i al.
+    if (!projectItem && timelineItems.length) {
+      try {
+        if (timelineItems[0].projectItem) {
+          projectItem = timelineItems[0].projectItem;
+          source = "timeline";
+        }
+      } catch (e3) {}
+    }
+
+    if (!projectItem) {
+      var panelItems = PP_projectPanelSelection();
+      if (panelItems.length) {
+        projectItem = panelItems[0];
+        source = "project";
+      }
+    }
+
+    if (!projectItem) {
+      return PP_result(false, "Secim yok. Project panelinden bir klip sec ya da timeline'da bir klibe tikla.");
+    }
+
+    var nodeId = "";
+    try { nodeId = String(projectItem.nodeId); } catch (e4) {}
+
+    var occurrences = PP_findOccurrences(seq, nodeId);
+
+    var seqJson = "null";
+    if (seq) {
+      var zero = "0";
+      try { zero = String(seq.zeroPoint); } catch (e5) {}
+      var timebase = "0";
+      try { timebase = String(seq.timebase); } catch (e6) {}
+      var vTracks = 0;
+      try { vTracks = seq.videoTracks.numTracks; } catch (e7) {}
+
+      seqJson = "{" + '"name":' + PP_jsonString(seq.name)
+        + ',"zeroPointTicks":' + PP_jsonString(zero)
+        + ',"zeroPointSeconds":' + (Number(zero) / PP_TICKS_PER_SECOND)
+        + ',"timebase":' + PP_jsonString(timebase)
+        + ',"videoTracks":' + vTracks + "}";
+    }
+
+    var extra = "{" + '"source":' + PP_jsonString(source)
+      + ',"item":' + PP_projectItemJson(projectItem)
+      + ',"sequence":' + seqJson
+      + ',"selectedOccurrence":' + (selectedOccurrence || "null")
+      + ',"occurrences":[' + occurrences.join(",") + "]"
+      + ',"occurrenceCount":' + occurrences.length + "}";
+
+    var message = (source === "timeline" ? "Timeline" : "Project paneli") + " secimi okundu, "
+      + occurrences.length + " kullanim bulundu.";
+
+    return PP_result(true, message, extra);
+  } catch (e) {
+    return PP_result(false, "Secim okunamadi: " + e);
+  }
+}
+
+/*
+  SRT'yi projeye alir ve caption track'e koymayi dener.
+  sequence.createCaptionTrack() Probe 2 dokumunde goruldu ama imzasi bilinmiyor;
+  varyantlar sirayla deneniyor ve hepsi log'a yaziliyor.
+*/
+function PP_importCaptions(payloadJson) {
+  var payload = PP_parseJson(payloadJson) || {};
+  var logger = new PP_Logger(payload.logPath);
+
+  try {
+    logger.add("=== SRT ICERI ALMA ===");
+    logger.add("srt: " + payload.srtPath);
+
+    var f = new File(payload.srtPath);
+    if (!f.exists) {
+      logger.add("HATA: dosya yok.");
+      return PP_result(false, "SRT bulunamadi: " + payload.srtPath);
+    }
+
+    var seq = PP_activeSequence(logger);
+    if (!seq) return PP_result(false, "Aktif sequence yok.");
+
+    logger.step(1, "importFiles");
+    var before = 0;
+    try { before = app.project.rootItem.children.numItems; } catch (e1) {}
+
+    var imported = false;
+    try {
+      imported = app.project.importFiles([f.fsName], true, app.project.rootItem, false);
+      logger.add("  importFiles -> " + imported);
+    } catch (eImp) {
+      logger.add("  importFiles HATA: " + eImp);
+    }
+
+    var after = 0;
+    try { after = app.project.rootItem.children.numItems; } catch (e2) {}
+    logger.add("  kok item: " + before + " -> " + after);
+
+    var captionItem = null;
+    try {
+      for (var i = after - 1; i >= 0; i--) {
+        var it = app.project.rootItem.children[i];
+        var nm = "";
+        try { nm = String(it.name); } catch (e3) {}
+        if (nm && nm.toLowerCase().indexOf(".srt") >= 0) { captionItem = it; break; }
+        var mp = "";
+        try { mp = String(it.getMediaPath()); } catch (e4) {}
+        if (mp && mp.toLowerCase() === String(f.fsName).toLowerCase()) { captionItem = it; break; }
+      }
+    } catch (eFind) {
+      logger.add("  item arama HATA: " + eFind);
+    }
+
+    if (!captionItem) {
+      logger.add("  Iceri alinan altyazi item'i bulunamadi.");
+      return PP_result(false, "SRT projeye alinamadi. Log: " + (payload.logPath || ""));
+    }
+    logger.add("  bulundu: " + captionItem.name);
+    PP_dumpInto(logger, "caption projectItem", captionItem);
+
+    logger.step(2, "createCaptionTrack imzasi");
+    try {
+      logger.add("  sequence metodlari: " + PP_reflectList(seq, "methods").join(" | "));
+    } catch (eR) {}
+
+    var trackCreated = false;
+    if (typeof seq.createCaptionTrack === "function") {
+      var variants = [
+        { label: "(item, ticks)", run: function () { return seq.createCaptionTrack(captionItem, "0"); } },
+        { label: "(item, ticks, true)", run: function () { return seq.createCaptionTrack(captionItem, "0", true); } },
+        { label: "(item, 0)", run: function () { return seq.createCaptionTrack(captionItem, 0); } },
+        { label: "(item)", run: function () { return seq.createCaptionTrack(captionItem); } }
+      ];
+
+      for (var v = 0; v < variants.length; v++) {
+        try {
+          var out = variants[v].run();
+          logger.add("  " + variants[v].label + " -> " + PP_typeName(out));
+          trackCreated = true;
+          break;
+        } catch (eV) {
+          logger.add("  " + variants[v].label + " HATA: " + eV);
+        }
+      }
+    } else {
+      logger.add("  createCaptionTrack YOK.");
+    }
+
+    logger.step(3, "BITTI");
+
+    var extra = "{" + '"imported":true'
+      + ',"trackCreated":' + (trackCreated ? "true" : "false")
+      + ',"itemName":' + PP_jsonString(captionItem.name) + "}";
+
+    return PP_result(true,
+      trackCreated
+        ? "SRT iceri alindi ve caption track olusturuldu."
+        : "SRT projeye alindi. Caption track otomatik olusmadi - Project panelinden timeline'a surukle.",
+      extra);
+  } catch (e) {
+    logger.add("KRITIK HATA: " + e);
+    return PP_result(false, "SRT alma hatasi: " + e);
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* PROBE 0 - baglanti testi                                            */
 /* ------------------------------------------------------------------ */

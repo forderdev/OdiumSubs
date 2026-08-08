@@ -121,6 +121,35 @@ parametresine yazıp aynısını geri okudu, ama Program Monitor'de yazı deği�
 `{"capPropFontEdit":true,"capPropFontSizeEdit":false,"fontEditValue":["BebasNeue-Regular"],...}`.
 Probe 7 bunu, klip süresi değiştirmeyi ve Motion Position/Scale yazmayı ölçüyor.
 
+## M1 ölçüm sonuçları (gerçek dosya, Premiere'e dokunmadan)
+
+**Kurulum:** `Faster-Whisper-XXL_r245.4_windows.7z`, 1358 MB. GitHub API'den seçildi.
+Windows'un `tar.exe`'si (bsdtar 3.8.4 + liblzma) 7z'yi sorunsuz açtı — 7-Zip gerekmedi.
+Kurulum yeri: `tools/faster-whisper-xxl/Faster-Whisper-XXL/faster-whisper-xxl.exe`.
+
+**Bayraklar `--help` ile teyit edildi.** `--word_timestamps`, `--vad_filter`,
+`--output_format json`, `--initial_prompt`, `--language`, `--model`, `--device`,
+`--compute_type` hepsi var. `--print_progress` ve `--beep_off` değersiz bayrak.
+
+**Hız: 32.7 ses saniyesi/sn** (RTX 3060 Ti, `large-v3-turbo`, CUDA).
+→ 10 dk video ≈ 18 sn · 40 dk video ≈ 73 sn. Model ilk çalıştırmada iniyor (1.62 GB, ~18 sn).
+
+**Kalite farkı gerçek.** Aynı 60 sn Türkçe konuşma:
+
+| Model | Çıktı |
+|---|---|
+| `tiny` | "Sonuna intruyu şekeriz" · "programın ispili" · "Mikhemler" |
+| `large-v3-turbo` | "Sonra introyu çekeriz" · "programın ismini" · "Mükemmel" |
+
+Türkçe karakterler SRT'ye kadar bozulmadan geliyor.
+
+**Öbekleme ölçüldü:** 2.8 kelime/öbek, 1.22 sn ortalama — karar 7'nin hedeflediği aralık.
+
+**Tuzak: çıkış kodu güvenilmez.** r245.4 işini bitirip JSON'u yazıyor, sonra kapanırken
+`0xC0000409` (3221226505, stack buffer overrun) ile çöküyor — PyInstaller paketlerinde
+bilinen kapanış hatası. Çıkış koduna bakıp başarısız saysak her transkripsiyon boşa
+giderdi. Artık çıktı geçerliyse başarı sayılıyor, kod sadece loglanıyor.
+
 ## Açık bilinmeyenler (M0 bunları ölçüyor)
 
 1. `importMGT` klip başına ms → animasyonlu modun eşiği
