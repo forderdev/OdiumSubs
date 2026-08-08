@@ -1,0 +1,96 @@
+<meta charset="utf-8">
+<title>Odium Subs - M0 Probe</title>
+<link rel="stylesheet" href="css/styles.css">
+
+<div class="wrap">
+  <header class="brand">
+    <div class="mark">ODIUM SUBS</div>
+    <div class="sub">M0 &middot; olcum paketi <span id="ver">v0.1.0</span></div>
+    <div class="pill" id="pill">baglanmadi</div>
+  </header>
+
+  <section class="card">
+    <h2>0 &middot; Baglanti</h2>
+    <p class="hint">Host'a ulasiliyor mu, hangi Premiere surumu.</p>
+    <button id="btnPing" class="btn">Host'u Test Et</button>
+  </section>
+
+  <section class="card">
+    <h2>1 &middot; Secim + Occurrence + Tick</h2>
+    <p class="hint">
+      Once Project panelinde bir video klibi sec (veya timeline'da bir klip sec), sonra bas.
+      Secili klibin timeline'da kac yerde kullanildigini ve <code>start / inPoint</code>
+      esleme formulunun tutup tutmadigini olcer.
+    </p>
+    <button id="btnSelection" class="btn">Secimi Oku</button>
+  </section>
+
+  <section class="card">
+    <h2>2 &middot; MOGRT parametreleri</h2>
+    <p class="hint">
+      Tek bir MOGRT basar, <code>getMGTComponent()</code> parametrelerini isim ve degerleriyle doker,
+      metin yazmayi (Turkce karakter dahil) dener. Font parametresi var mi burada gorunecek.
+    </p>
+    <label>MOGRT yolu</label>
+    <input type="text" id="mogrtPath" spellcheck="false">
+    <div class="row">
+      <div class="col">
+        <label>Video track (0 = V1)</label>
+        <input type="number" id="mogrtTrack" value="0" min="0">
+      </div>
+      <div class="col">
+        <label>Saniye</label>
+        <input type="number" id="mogrtAt" value="0" min="0" step="0.5">
+      </div>
+    </div>
+    <button id="btnMogrt" class="btn">MOGRT Parametrelerini Dok</button>
+  </section>
+
+  <section class="card accent">
+    <h2>3 &middot; importMGT hiz olcumu</h2>
+    <p class="hint">
+      <b>Urunun seklini bu belirliyor.</b> N adet MOGRT basar, klip basina medyan sureyi olcer,
+      350 / 600 / 1400 klip icin tahmin cikarir. Bos bir sequence'de calistir.
+    </p>
+    <div class="row">
+      <div class="col">
+        <label>Klip sayisi</label>
+        <input type="number" id="speedCount" value="25" min="1" max="500">
+      </div>
+      <div class="col">
+        <label>Video track</label>
+        <input type="number" id="speedTrack" value="0" min="0">
+      </div>
+      <div class="col">
+        <label>Aralik (sn)</label>
+        <input type="number" id="speedGap" value="2" min="0.5" step="0.5">
+      </div>
+    </div>
+    <button id="btnSpeed" class="btn primary">Hizi Olc</button>
+  </section>
+
+  <section class="card">
+    <h2>4 &middot; QE DOM (track ekle / adlandir)</h2>
+    <p class="hint">
+      Yeni video track acilabiliyor mu, ada gore bulunabiliyor mu, klip silme yuzeyi ne.
+      <b>Silme yapmaz</b>, sadece dokum alir.
+    </p>
+    <label>Track adi</label>
+    <input type="text" id="qeTrackName" value="ODIUM SUBS" spellcheck="false">
+    <button id="btnQE" class="btn">QE DOM'u Test Et</button>
+  </section>
+
+  <section class="card">
+    <div class="row">
+      <button id="btnOpenLogs" class="btn ghost">Log Klasorunu Ac</button>
+      <button id="btnClear" class="btn ghost">Log'u Temizle</button>
+    </div>
+    <p class="hint" id="logDirHint">&nbsp;</p>
+  </section>
+
+  <pre id="log" class="log"></pre>
+</div>
+
+<script src="lib/CSInterface.js"></script>
+<script src="js/premiereBridge.js"></script>
+<script src="js/app.js"></script>

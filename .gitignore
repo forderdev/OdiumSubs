@@ -1,0 +1,19 @@
+# probe ve calisma ciktilari
+.probe/
+*.log
+
+# indirilen araclar (whisper, ffmpeg, modeller) - repoya girmez
+tools/faster-whisper-xxl/
+tools/ffmpeg.exe
+tools/*.zip
+models/
+
+# paketleme ciktilari
+dist/
+*.zxp
+
+# gecici
+_CSInterface_source.js
+node_modules/
+Thumbs.db
+desktop.ini
