@@ -9,6 +9,8 @@
 
 var chunker = require("../chunker.js");
 var srt = require("../srt.js");
+var whisper = require("../whisper.js");
+var audio = require("../audio.js");
 
 var passed = 0;
 var failed = 0;
@@ -144,6 +146,8 @@ console.log("\n=== chunker: bozuk girdi ===");
     { word: "  ", start: 0, end: 1 },
     { word: "iyi", start: 1, end: 0.5 },      // ters zaman
     { word: "kotu", start: NaN, end: 2 },     // gecersiz
+    { word: "null", start: null, end: 3 },    // JSON.stringify NaN'i null yapar
+    { word: "bos", start: "", end: 4 },       // Number("") === 0 tuzagi
     null
   ], { mode: "chunk" });
   eq("sadece gecerli kelime kaldi", cues.length, 1);
@@ -212,6 +216,111 @@ console.log("\n=== srt: bozuk girdi ===");
 {
   var back = srt.fromSrt("bu bir srt degil\n\n\n42\nzaman yok\nmetin");
   eq("bozuk bloklar atlandi", back.length, 0);
+}
+
+console.log("\n=== whisper: JSON ayristirma ===");
+{
+  var raw = {
+    language: "tr",
+    segments: [
+      {
+        start: 0.0, end: 1.6, text: " Merhaba dünya.",
+        words: [
+          { word: " Merhaba", start: 0.0, end: 0.8, probability: 0.98 },
+          { word: " dünya.", start: 0.8, end: 1.6, probability: 0.91 }
+        ]
+      },
+      {
+        start: 2.4, end: 3.1, text: " Nasılsın",
+        words: [
+          { word: " Nasılsın", start: 2.4, end: 3.1, probability: 0.87 },
+          { word: "   ", start: 3.1, end: 3.2 },                 // bos - atilmali
+          { word: "bozuk", start: NaN, end: 4.0 }                // gecersiz - atilmali
+        ]
+      }
+    ]
+  };
+
+  var parsed = whisper.parseWhisperJson(raw);
+  eq("dil okundu", parsed.language, "tr");
+  eq("gecerli kelime sayisi", parsed.words.length, 3);
+  eq("bastaki bosluk temizlendi", parsed.words[0].word, "Merhaba");
+  eq("noktalama korundu", parsed.words[1].word, "dünya.");
+  eq("guven degeri tasindi", parsed.words[0].confidence, 0.98);
+  eq("segment metni trim'lendi", parsed.segments[0].text, "Merhaba dünya.");
+  eq("kelime zamani var", parsed.hasWordTimestamps, true);
+
+  // String girdi de kabul edilmeli
+  var fromString = whisper.parseWhisperJson(JSON.stringify(raw));
+  eq("string girdi ayristirildi", fromString.words.length, 3);
+}
+
+console.log("\n=== whisper: kelime zamani yoksa ===");
+{
+  var parsed = whisper.parseWhisperJson({
+    language: "tr",
+    segments: [{ start: 0, end: 2, text: "sadece segment" }]
+  });
+  eq("hasWordTimestamps false", parsed.hasWordTimestamps, false);
+  eq("segment yine de okundu", parsed.segments.length, 1);
+}
+
+console.log("\n=== whisper: ilerleme satiri ===");
+{
+  near("yuzde okundu", whisper.parseProgressLine("  42%|####      | 12/28", null), 0.42);
+  eq("alakasiz satir null", whisper.parseProgressLine("Loading model...", 100), null);
+  var r = whisper.parseProgressLine("[00:00:50.000 --> 00:00:52.000]  metin", 100);
+  near("zaman damgasindan oran", r, 0.5, 0.01);
+}
+
+console.log("\n=== whisper: CLI argumanlari ===");
+{
+  var args = whisper.buildArgs("C:\\ses.wav", "C:\\out", { language: "tr", initialPrompt: "Odium, Kayseri" });
+  eq("ilk arguman ses dosyasi", args[0], "C:\\ses.wav");
+  check("model verildi", args.indexOf("--model") > 0);
+  check("json cikti", args.indexOf("--output_format") > 0 && args.indexOf("json") > 0);
+  check("dil verildi", args.indexOf("--language") > 0 && args.indexOf("tr") > 0);
+  check("kelime zamani acik", args.indexOf("--word_timestamps") > 0);
+  check("vad acik", args.indexOf("--vad_filter") > 0);
+  check("ozel sozluk gecti", args.indexOf("Odium, Kayseri") > 0);
+
+  var autoArgs = whisper.buildArgs("a.wav", "out", { language: "auto" });
+  eq("auto dilde --language gonderilmiyor", autoArgs.indexOf("--language"), -1);
+}
+
+console.log("\n=== ffmpeg: bulma ===");
+{
+  var found = audio.resolveFfmpeg({});
+  check("PATH'te ffmpeg bulundu", !!found, "bulunamadi - kurulu degilse bu normal");
+  eq("olmayan yol yok sayildi", audio.resolveFfmpeg({ ffmpegPath: "C:\\yok\\ffmpeg.exe" }) !== "C:\\yok\\ffmpeg.exe", true);
+}
+
+console.log("\n=== uctan uca: whisper JSON -> obek -> SRT ===");
+{
+  var parsed = whisper.parseWhisperJson({
+    language: "tr",
+    segments: [{
+      start: 0, end: 4.2, text: " Bugün hava çok güzel. Dışarı çıkalım mı",
+      words: [
+        { word: " Bugün", start: 0.0, end: 0.5 },
+        { word: " hava", start: 0.5, end: 0.9 },
+        { word: " çok", start: 0.9, end: 1.2 },
+        { word: " güzel.", start: 1.2, end: 1.8 },
+        { word: " Dışarı", start: 2.4, end: 3.0 },
+        { word: " çıkalım", start: 3.0, end: 3.6 },
+        { word: " mı", start: 3.6, end: 4.2 }
+      ]
+    }]
+  });
+
+  var cues = chunker.chunkWords(parsed.words, { mode: "chunk" });
+  eq("nokta + duraklama iki obek yapti", cues.length, 2);
+  eq("ilk obek", cues[0].text, "Bugün hava çok güzel.");
+  eq("ikinci obek", cues[1].text, "Dışarı çıkalım mı");
+
+  var text = srt.toSrt(cues);
+  check("SRT Turkce metni tasidi", text.indexOf("Dışarı çıkalım mı") > 0);
+  eq("SRT geri okunabildi", srt.fromSrt(text).length, 2);
 }
 
 console.log("\n----------------------------------------");

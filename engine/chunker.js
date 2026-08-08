@@ -66,6 +66,11 @@
     return base;
   }
 
+  function isNumeric(value) {
+    if (value === null || value === undefined || value === "") return false;
+    return isFinite(Number(value));
+  }
+
   /* Bozuk/bos kelimeleri atar, siraya sokar, ters zamanlari duzeltir. */
   function normalizeWords(words) {
     var out = [];
@@ -78,10 +83,12 @@
       text = text.replace(/^\s+|\s+$/g, "");
       if (!text) continue;
 
+      // Number(null) === 0 - null/undefined/"" once elenmeli, yoksa bozuk
+      // kelime 0. saniyeye yapisir.
+      if (!isNumeric(w.start)) continue;
       var start = Number(w.start);
-      var end = Number(w.end);
-      if (!isFinite(start)) continue;
-      if (!isFinite(end) || end < start) end = start;
+      var end = isNumeric(w.end) ? Number(w.end) : start;
+      if (end < start) end = start;
 
       out.push({ word: text, start: start, end: end });
     }
