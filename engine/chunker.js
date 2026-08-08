@@ -28,7 +28,13 @@
       pauseBreak: 0.4,      // kelimeler arasi bu kadar bosluk varsa kes (nefes/duraklama)
       gapMerge: 0.3,        // obekler arasi bu kadar kucuk bosluk varsa oncekini uzat (titreme olmasin)
       breakOnPunctuation: true,
-      maxCharsPerLine: 0,   // 0 = satir sarma yok
+      /*
+        Kelime sayisi tek basina tasmayi engellemiyor: Turkce kelimeler uzun,
+        5 kelime 45 karakteri bulabiliyor ve 1080p'de kadraji asiyor.
+        32 karakter, Montserrat Bold ~90 punto ile tek satirda rahat siginin
+        ust siniri (32 x 0.55 x 90 = 1584 px < 1720 px guvenli alan).
+      */
+      maxCharsPerLine: 32,
       maxLines: 1
     },
     classic: {

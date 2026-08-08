@@ -141,6 +141,31 @@ console.log("\n=== chunker: klasik mod satir sarma ===");
   check("satir uzunlugu makul (<=52)", maxLen <= 52, "gelen " + maxLen);
 }
 
+console.log("\n=== chunker: karakter siniri tasmayi engelliyor ===");
+{
+  // Uzun Turkce kelimeler: 5 kelime siniri altinda ama karakterde tasiyor.
+  var w = words([
+    ["muvaffakiyetsizleştiricilerdenmişsinizcesine", 0.0, 0.6],
+    ["karşılaştırmalarımızdan", 0.6, 1.2],
+    ["bilgisayarlarımızdaki", 1.2, 1.8]
+  ]);
+  var cues = chunker.chunkWords(w, { mode: "chunk", pauseBreak: 0, maxDuration: 0 });
+  check("uzun kelimeler bolundu", cues.length >= 2, "gelen " + cues.length);
+
+  var tooLong = 0;
+  cues.forEach(function (c) { if (c.text.length > 60) tooLong++; });
+  // Tek kelime sinirdan uzunsa bolunemez; onun disinda kimse 60 karakteri gecmemeli.
+  check("tek kelimelik obekler disinda tasma yok", tooLong <= 1, "60+ karakterli obek: " + tooLong);
+
+  var normal = words([
+    ["bugün", 0.0, 0.3], ["hava", 0.3, 0.6], ["çok", 0.6, 0.9],
+    ["güzel", 0.9, 1.2], ["görünüyor", 1.2, 1.5]
+  ]);
+  var normalCues = chunker.chunkWords(normal, { mode: "chunk", pauseBreak: 0 });
+  eq("normal 5 kelime tek obekte kaldi", normalCues.length, 1);
+  check("32 karakter siniri altinda", normalCues[0].text.length <= 32, normalCues[0].text.length + " karakter");
+}
+
 console.log("\n=== chunker: bozuk girdi ===");
 {
   var cues = chunker.chunkWords([

@@ -28,6 +28,27 @@ katmanın kendi motion blur anahtarı da açık olmalı. İkisi birden açık de
 
 ---
 
+## 1b. Font seçimi — atlanırsa Türkçe bozulur
+
+**Font Türkçe gliflerini (Ç Ğ İ Ş ı ğ ş) kapsamak zorunda.** Kapsamıyorsa AE eksik
+karakterleri sessizce başka fonta düşürür; ekranda "dünya **ÇĞ**" gibi karışık font çıkar.
+Fredoka One bu yüzden elendi.
+
+Bu makinede kurulu, Türkçe'yi tam kapsayan uygun adaylar (ölçüldü, 94 fonttan seçildi):
+
+| Font | Not |
+|---|---|
+| **Montserrat** | Geometrik sans, kalın ağırlıklar — varsayılan seçim |
+| Bebas Neue | Sıkışık büyük harf; Adobe'nin kendi caption şablonlarının fontu |
+| Impact / Bahnschrift / Segoe UI / Arial | Yedek |
+
+**Boyut: ~90 punto.** Hesap: 5 kelimelik Türkçe öbek ≈ 32 karakter, Montserrat Bold'da
+ortalama karakter genişliği ≈ `0.55 × punto` → `32 × 0.55 × 90 = 1584 px`, 1920'lik
+kadrajda güvenli alanın (1720 px) altında. 285 punto üç kat fazla, taşar.
+
+Öbekleyici de 32 karakter sınırı uyguluyor (`engine/chunker.js`), yani metin tarafından
+da taşma engelleniyor — ama font boyutunu büyütürsen o sınırı da büyütmen gerekir.
+
 ## 2. Katman yapısı
 
 ```
