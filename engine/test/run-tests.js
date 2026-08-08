@@ -11,6 +11,7 @@ var chunker = require("../chunker.js");
 var srt = require("../srt.js");
 var whisper = require("../whisper.js");
 var audio = require("../audio.js");
+var installer = require("../installer.js");
 
 var passed = 0;
 var failed = 0;
@@ -293,6 +294,36 @@ console.log("\n=== ffmpeg: bulma ===");
   var found = audio.resolveFfmpeg({});
   check("PATH'te ffmpeg bulundu", !!found, "bulunamadi - kurulu degilse bu normal");
   eq("olmayan yol yok sayildi", audio.resolveFfmpeg({ ffmpegPath: "C:\\yok\\ffmpeg.exe" }) !== "C:\\yok\\ffmpeg.exe", true);
+}
+
+console.log("\n=== installer: surum secimi ===");
+{
+  eq("r245.4 -> 245.004", installer.assetVersion("Faster-Whisper-XXL_r245.4_windows.7z"), 245.004);
+  eq("r192.3.1 -> 192.003", installer.assetVersion("Faster-Whisper-XXL_r192.3.1_linux.7z"), 192.003);
+  eq("surumsuz -> 0", installer.assetVersion("readme.txt"), 0);
+
+  var assets = [
+    { name: "Faster-Whisper-XXL_r192.3.4_windows.7z", browser_download_url: "u1", size: 100 },
+    { name: "Faster-Whisper-XXL_r245.4_linux.7z", browser_download_url: "u2", size: 200 },
+    { name: "Faster-Whisper-XXL_r245.4_windows.7z", browser_download_url: "u3", size: 300 },
+    { name: "Faster-Whisper-XXL_r245.1_windows.7z", browser_download_url: "u4", size: 400 },
+    { name: "notlar.txt", browser_download_url: "u5", size: 10 }
+  ];
+  var picked = installer.pickWindowsAsset(assets);
+  eq("en yeni windows varligi secildi", picked.name, "Faster-Whisper-XXL_r245.4_windows.7z");
+  eq("dogru url", picked.url, "u3");
+  eq("linux elendi", picked.url === "u2", false);
+
+  eq("bos liste null", installer.pickWindowsAsset([]), null);
+  eq("sadece linux varsa null", installer.pickWindowsAsset([{ name: "x_r1_linux.7z" }]), null);
+}
+
+console.log("\n=== installer: arsiv acici ===");
+{
+  var tool = installer.findExtractor();
+  check("arsiv acacak arac var", !!tool, "ne 7-Zip ne tar.exe bulundu");
+  if (tool) console.log("       kullanilacak: " + tool.kind + " -> " + tool.path);
+  eq("boyut bicimi", installer.formatBytes(1424309000), "1358 MB");
 }
 
 console.log("\n=== uctan uca: whisper JSON -> obek -> SRT ===");
