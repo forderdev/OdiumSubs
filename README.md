@@ -8,17 +8,41 @@ Kararların tamamı: [DECISIONS.md](DECISIONS.md)
 
 ---
 
-## Şu anki durum: M0 — ölçüm paketi
+## Şu anki durum: M2 — çalışan panel (klasik altyazı yolu)
 
-Bu sürüm **altyazı basmıyor.** Mimariyi belirleyecek dört bilinmeyeni ölçüyor.
-Bu dördünün sonucu gelmeden M1'e geçilmiyor.
+Panel akışı:
 
-| # | Ölçülen | Neden önemli |
-|---|---|---|
-| 1 | Seçim okuma + occurrence eşleme + tick birimi | Altyazının timeline'da doğru yere düşmesi buna bağlı |
-| 2 | MOGRT parametre yüzeyi (`getMGTComponent`) | Font/boyut/renk yazılabiliyor mu, isimler ne |
-| 3 | `importMGT` klip başına süre | **Ürünün şeklini bu belirliyor** — animasyonlu mod uzun videoda yaşar mı |
-| 4 | QE DOM track ekleme / adlandırma | `ODIUM SUBS` track'i açılabiliyor mu |
+1. **Kaynak** — timeline'da veya Project panelinde seçili klibi okur, o klibin
+   timeline'daki tüm kullanımlarını bulur
+2. **Ayarlar** — mod (öbek/klasik), dil, model, özel sözlük, öbek kuralları
+3. **Yazıya dök** — ffmpeg → local Whisper → öbekleme, tek ilerleme çubuğuyla
+4. **Düzenle** — öbekleri düzelt, böl, birleştir, sil; toplu bul-değiştir
+5. **Timeline'a bas** — SRT üretir, kaynak zamanlarını sequence zamanına çevirir
+   (kesilmiş kurguda klip dışı öbekler atılır), Premiere'e alır
+
+**Animasyonlu MOGRT modu M3'te.** M0 ölçümleri onu mümkün kıldı:
+AE şablonuyla 97 ms/klip, parametreler isimle yazılabiliyor, font korunuyor.
+
+Ölçüm probe'ları panelin altındaki **Gelişmiş** bölümünde duruyor.
+
+---
+
+## Kurulum sırası
+
+1. `tools\Dev-Link.bat` — paneli kur, CEP debug modunu aç
+2. `node tools\install-whisper.js` — Faster-Whisper-XXL (1.36 GB, tek seferlik).
+   Panel de ilk transkripsiyonda kendisi indirir; bu sadece önden almak için
+3. Premiere'i tamamen kapat/aç → `Window > Extensions > Odium Subs`
+
+ffmpeg PATH'te olmalı ya da `tools/ffmpeg.exe` olarak konmalı.
+Whisper modelleri ilk çalıştırmada iner (`large-v3-turbo` ~1.6 GB).
+
+### Premiere'siz test
+
+```bash
+node engine\test\run-tests.js
+node tools\smoke-test.js "D:\video.mp4" --model large-v3-turbo --seconds 60
+```
 
 ---
 

@@ -58,6 +58,12 @@
     hostEnvironment: hostEnvironment,
     extensionPath: extensionPath,
     ping: function () { return callHost("PP_ping"); },
+
+    /* Uretim fonksiyonlari */
+    getSelection: function () { return callHost("PP_getSelection"); },
+    importCaptions: function (payload) { return callHost("PP_importCaptions", payload); },
+
+    /* Olcum probe'lari */
     probeSelection: function (payload) { return callHost("PP_probeSelection", payload); },
     probeMogrt: function (payload) { return callHost("PP_probeMogrt", payload); },
     probeImportSpeed: function (payload) { return callHost("PP_probeImportSpeed", payload); },

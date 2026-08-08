@@ -1,197 +1,262 @@
 <meta charset="utf-8">
-<title>Odium Subs - M0 Probe</title>
+<title>Odium Subs</title>
 <link rel="stylesheet" href="css/styles.css">
 
 <div class="wrap">
   <header class="brand">
     <div class="mark">ODIUM SUBS</div>
-    <div class="sub">M0 &middot; olcum paketi <span id="ver">v0.1.0</span></div>
-    <div class="pill" id="pill">baglanmadi</div>
+    <div class="sub">v0.2.0</div>
+    <div class="pill" id="pill">hazir</div>
   </header>
 
+  <!-- ============ 1. KAYNAK ============ -->
   <section class="card">
-    <h2>0 &middot; Baglanti</h2>
-    <p class="hint">Host'a ulasiliyor mu, hangi Premiere surumu.</p>
-    <button id="btnPing" class="btn">Host'u Test Et</button>
+    <div class="step"><span class="num">1</span> Kaynak</div>
+    <p class="hint">
+      Timeline'da ya da Project panelinde bir klip sec, sonra oku.
+      Timeline secimi daha kesin - klip zaten yerinde.
+    </p>
+    <button id="btnRead" class="btn">Secimi Oku</button>
+
+    <div id="sourceBox" class="readout hidden">
+      <div class="kv"><span>Klip</span><b id="srcName">-</b></div>
+      <div class="kv"><span>Dosya</span><b id="srcPath" class="path">-</b></div>
+      <div class="kv"><span>Sequence</span><b id="srcSeq">-</b></div>
+      <div class="kv"><span>Timeline'da</span><b id="srcOcc">-</b></div>
+    </div>
   </section>
 
+  <!-- ============ 2. AYARLAR ============ -->
   <section class="card">
-    <h2>1 &middot; Secim + Occurrence + Tick</h2>
-    <p class="hint">
-      Once Project panelinde bir video klibi sec (veya timeline'da bir klip sec), sonra bas.
-      Secili klibin timeline'da kac yerde kullanildigini ve <code>start / inPoint</code>
-      esleme formulunun tutup tutmadigini olcer.
-    </p>
-    <button id="btnSelection" class="btn">Secimi Oku</button>
-  </section>
+    <div class="step"><span class="num">2</span> Ayarlar</div>
 
-  <section class="card">
-    <h2>2 &middot; MOGRT parametreleri</h2>
-    <p class="hint">
-      Tek bir MOGRT basar, <code>getMGTComponent()</code> parametrelerini isim ve degerleriyle doker,
-      metin yazmayi (Turkce karakter dahil) dener. Font parametresi var mi burada gorunecek.
-    </p>
-    <label>MOGRT yolu</label>
-    <input type="text" id="mogrtPath" spellcheck="false">
     <div class="row">
       <div class="col">
-        <label>Video track (0 = V1)</label>
-        <input type="number" id="mogrtTrack" value="0" min="0">
+        <label>Mod</label>
+        <select id="optMode">
+          <option value="chunk">Obek (TikTok tarzi)</option>
+          <option value="classic">Klasik altyazi</option>
+        </select>
       </div>
       <div class="col">
-        <label>Saniye</label>
-        <input type="number" id="mogrtAt" value="0" min="0" step="0.5">
+        <label>Dil</label>
+        <select id="optLanguage">
+          <option value="tr">Turkce</option>
+          <option value="en">Ingilizce</option>
+          <option value="auto">Otomatik algila</option>
+        </select>
       </div>
     </div>
-    <button id="btnMogrt" class="btn">MOGRT Parametrelerini Dok</button>
+
+    <div class="row">
+      <div class="col">
+        <label>Model</label>
+        <select id="optModel">
+          <option value="large-v3-turbo">large-v3-turbo (onerilen)</option>
+          <option value="large-v3">large-v3 (daha yavas)</option>
+          <option value="medium">medium</option>
+          <option value="small">small</option>
+          <option value="tiny">tiny (sadece test)</option>
+        </select>
+      </div>
+      <div class="col">
+        <label>Kapsam</label>
+        <select id="optScope">
+          <option value="all">Klibin tamami</option>
+          <option value="range">Sadece ilk N saniye</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="rangeRow" class="row hidden">
+      <div class="col">
+        <label>Baslangic (sn)</label>
+        <input type="number" id="optStart" value="0" min="0">
+      </div>
+      <div class="col">
+        <label>Sure (sn)</label>
+        <input type="number" id="optSeconds" value="60" min="5">
+      </div>
+    </div>
+
+    <label>Ozel sozluk <span class="mut">- isim ve terimler, virgulle</span></label>
+    <input type="text" id="optPrompt" placeholder="Odium, Kayseri, mid lane" spellcheck="false">
+
+    <details class="sub-details">
+      <summary>Obek kurallari</summary>
+      <div class="row">
+        <div class="col">
+          <label>Maks kelime</label>
+          <input type="number" id="optMaxWords" value="5" min="1" max="20">
+        </div>
+        <div class="col">
+          <label>Maks sure (sn)</label>
+          <input type="number" id="optMaxDuration" value="2.5" min="0.5" step="0.1">
+        </div>
+      </div>
+      <div class="row">
+        <div class="col">
+          <label>Maks karakter</label>
+          <input type="number" id="optMaxChars" value="32" min="10" max="90">
+        </div>
+        <div class="col">
+          <label>Duraklama kesme (sn)</label>
+          <input type="number" id="optPause" value="0.4" min="0" step="0.05">
+        </div>
+      </div>
+      <div class="row">
+        <div class="col">
+          <label>Min sure (sn)</label>
+          <input type="number" id="optMinDuration" value="0.6" min="0.1" step="0.1">
+        </div>
+        <div class="col">
+          <label>Bosluk birlestir (sn)</label>
+          <input type="number" id="optGapMerge" value="0.3" min="0" step="0.05">
+        </div>
+      </div>
+    </details>
   </section>
 
+  <!-- ============ 3. YAZIYA DOK ============ -->
   <section class="card accent">
-    <h2>3 &middot; importMGT hiz olcumu</h2>
-    <p class="hint">
-      <b>Urunun seklini bu belirliyor.</b> N adet MOGRT basar, klip basina medyan sureyi olcer,
-      350 / 600 / 1400 klip icin tahmin cikarir. Bos bir sequence'de calistir.
-    </p>
-    <div class="row">
-      <div class="col">
-        <label>Klip sayisi</label>
-        <input type="number" id="speedCount" value="25" min="1" max="500">
-      </div>
-      <div class="col">
-        <label>Video track</label>
-        <input type="number" id="speedTrack" value="0" min="0">
-      </div>
-      <div class="col">
-        <label>Aralik (sn)</label>
-        <input type="number" id="speedGap" value="2" min="0.5" step="0.5">
-      </div>
+    <div class="step"><span class="num">3</span> Yaziya dok</div>
+    <button id="btnTranscribe" class="btn primary" disabled>Once kaynak sec</button>
+    <div class="progress hidden" id="progWrap">
+      <div class="progress-bar"><i id="progBar"></i></div>
+      <div class="progress-text" id="progText">&nbsp;</div>
     </div>
-    <button id="btnSpeed" class="btn primary">Hizi Olc</button>
   </section>
 
-  <section class="card accent">
-    <h2>5 &middot; Hizli yol: projectItem + overwriteClip</h2>
-    <p class="hint">
-      <b>importMGT 427 ms/klip cikti - uzun videoda kullanilamaz.</b>
-      Bu probe MOGRT'in projeye item olarak dusup dusmedigini, dustuyse
-      <code>overwriteClip</code> ile basmanin kac kat hizli oldugunu olcer.
-      Ayrica kopyalarin metin parametrelerinin birbirine bagli olup olmadigini kontrol eder.
-    </p>
-    <div class="row">
-      <div class="col">
-        <label>Klip sayisi</label>
-        <input type="number" id="fastCount" value="25" min="1" max="500">
-      </div>
-      <div class="col">
-        <label>Video track</label>
-        <input type="number" id="fastTrack" value="0" min="0">
-      </div>
-      <div class="col">
-        <label>Aralik (sn)</label>
-        <input type="number" id="fastGap" value="2" min="0.5" step="0.5">
-      </div>
+  <!-- ============ 4. DUZENLE ============ -->
+  <section class="card hidden" id="editorCard">
+    <div class="step"><span class="num">4</span> Duzenle
+      <span class="counter" id="cueCount">0 obek</span>
     </div>
-    <button id="btnFast" class="btn primary">Hizli Yolu Olc</button>
+
+    <div class="row tools">
+      <input type="text" id="findText" placeholder="bul" spellcheck="false">
+      <input type="text" id="replaceText" placeholder="degistir" spellcheck="false">
+      <button id="btnReplace" class="btn slim">Tumunu degistir</button>
+    </div>
+
+    <div class="cue-list" id="cueList"></div>
   </section>
 
-  <section class="card accent">
-    <h2>6 &middot; AE vs Premiere sablonu</h2>
-    <p class="hint">
-      Probe 2'de <code>getMGTComponent</code> null dondu cunku o sablon Premiere'de
-      yazilmis (<code>authorApp: "ppro"</code>) - Essential Graphics parametresi tasimiyor.
-      Bu probe AE'de yazilmis bir sablonla (<code>aefx</code>) yan yana olcer:
-      parametreler geliyor mu, metin yazilabiliyor mu, hangisi daha hizli.
-      Her satira bir <code>.mogrt</code> yolu.
-    </p>
-    <label>Sablon yollari (her satira bir tane)</label>
-    <textarea id="tplPaths" rows="4" spellcheck="false"></textarea>
-    <div class="row">
-      <div class="col">
-        <label>Sablon basina import</label>
-        <input type="number" id="tplRuns" value="5" min="1" max="50">
-      </div>
-      <div class="col">
-        <label>Video track</label>
-        <input type="number" id="tplTrack" value="0" min="0">
-      </div>
-    </div>
-    <button id="btnTemplates" class="btn primary">Sablonlari Karsilastir</button>
-  </section>
+  <!-- ============ 5. TIMELINE ============ -->
+  <section class="card hidden" id="outputCard">
+    <div class="step"><span class="num">5</span> Timeline'a bas</div>
 
-  <section class="card accent">
-    <h2>7 &middot; Klip mekanigi provasi</h2>
-    <p class="hint">
-      M3'un cekirdegi. AE sablonunda: her parametrenin <b>tam</b> degerini doker,
-      her birine yazmayi deneyip <b>gercekten degisti mi</b> diye karsilastirir,
-      klip suresini degistirmeyi ve Motion Position/Scale yazmayi test eder.
-      Calistirdiktan sonra <b>Program Monitor'e bak</b> - yazi degisti mi.
-    </p>
-    <label>AE sablonu yolu</label>
-    <input type="text" id="mechPath" spellcheck="false">
     <div class="row">
-      <div class="col">
-        <label>Video track</label>
-        <input type="number" id="mechTrack" value="0" min="0">
-      </div>
-      <div class="col">
-        <label>Hedef sure (sn)</label>
-        <input type="number" id="mechDur" value="1.4" min="0.2" step="0.2">
-      </div>
+      <button id="btnSaveSrt" class="btn">SRT Kaydet</button>
+      <button id="btnImportSrt" class="btn primary">Premiere'e Al</button>
     </div>
-    <button id="btnMechanics" class="btn primary">Mekanigi Test Et</button>
-  </section>
-
-  <section class="card accent">
-    <h2>8 &middot; Dogru yazma yolu</h2>
-    <p class="hint">
-      Probe 7'de duz string yazinca blob eziliyor, font/boyut kayboluyordu.
-      Bu probe blob'u okuyup <code>textEditValue</code> + <code>fontTextRunLength</code>
-      (+ istege bagli font ve boyut) alanlarini degistirip geri yaziyor.
-      Renk <code>setColorValue</code> ve checkbox boolean yollari da test edilir.
+    <p class="hint" id="outputHint">
+      Klasik altyazi yolu: SRT projeye alinir, caption track'e dusurulur.
+      Animasyonlu MOGRT modu M3'te geliyor.
     </p>
-    <label>AE sablonu yolu</label>
-    <input type="text" id="wrPath" spellcheck="false">
-    <label>Yazilacak metin</label>
-    <input type="text" id="wrText" value="Merhaba dünya ÇĞİÖŞÜ">
-    <div class="row">
-      <div class="col">
-        <label>Font (bos = degistirme)</label>
-        <input type="text" id="wrFont" value="" spellcheck="false">
-      </div>
-      <div class="col">
-        <label>Boyut (0 = degistirme)</label>
-        <input type="number" id="wrSize" value="0" min="0">
-      </div>
-      <div class="col">
-        <label>Video track</label>
-        <input type="number" id="wrTrack" value="0" min="0">
-      </div>
-    </div>
-    <button id="btnTextWrite" class="btn primary">Dogru Yazmayi Test Et</button>
-  </section>
-
-  <section class="card">
-    <h2>4 &middot; QE DOM (track ekle / adlandir)</h2>
-    <p class="hint">
-      Yeni video track acilabiliyor mu, ada gore bulunabiliyor mu, klip silme yuzeyi ne.
-      <b>Silme yapmaz</b>, sadece dokum alir.
-    </p>
-    <label>Track adi</label>
-    <input type="text" id="qeTrackName" value="ODIUM SUBS" spellcheck="false">
-    <button id="btnQE" class="btn">QE DOM'u Test Et</button>
-  </section>
-
-  <section class="card">
-    <div class="row">
-      <button id="btnOpenLogs" class="btn ghost">Log Klasorunu Ac</button>
-      <button id="btnClear" class="btn ghost">Log'u Temizle</button>
-    </div>
-    <p class="hint" id="logDirHint">&nbsp;</p>
   </section>
 
   <pre id="log" class="log"></pre>
+
+  <!-- ============ GELISMIS: PROBE'LAR ============ -->
+  <details class="probes">
+    <summary>Gelismis - olcum probe'lari</summary>
+
+    <section class="card">
+      <h2>0 &middot; Baglanti</h2>
+      <button id="btnPing" class="btn slim">Host'u Test Et</button>
+    </section>
+
+    <section class="card">
+      <h2>1 &middot; Secim + occurrence + tick</h2>
+      <button id="btnSelection" class="btn slim">Secimi Oku (probe)</button>
+    </section>
+
+    <section class="card">
+      <h2>2 &middot; MOGRT parametreleri</h2>
+      <label>MOGRT yolu</label>
+      <input type="text" id="mogrtPath" spellcheck="false">
+      <div class="row">
+        <div class="col"><label>Video track</label><input type="number" id="mogrtTrack" value="0" min="0"></div>
+        <div class="col"><label>Saniye</label><input type="number" id="mogrtAt" value="0" min="0" step="0.5"></div>
+      </div>
+      <button id="btnMogrt" class="btn slim">Parametreleri Dok</button>
+    </section>
+
+    <section class="card">
+      <h2>3 &middot; importMGT hizi</h2>
+      <div class="row">
+        <div class="col"><label>Klip</label><input type="number" id="speedCount" value="25" min="1" max="500"></div>
+        <div class="col"><label>Track</label><input type="number" id="speedTrack" value="0" min="0"></div>
+        <div class="col"><label>Aralik</label><input type="number" id="speedGap" value="2" min="0.5" step="0.5"></div>
+      </div>
+      <button id="btnSpeed" class="btn slim">Hizi Olc</button>
+    </section>
+
+    <section class="card">
+      <h2>5 &middot; Hizli yol</h2>
+      <div class="row">
+        <div class="col"><label>Klip</label><input type="number" id="fastCount" value="25" min="1" max="500"></div>
+        <div class="col"><label>Track</label><input type="number" id="fastTrack" value="0" min="0"></div>
+        <div class="col"><label>Aralik</label><input type="number" id="fastGap" value="2" min="0.5" step="0.5"></div>
+      </div>
+      <button id="btnFast" class="btn slim">Hizli Yolu Olc</button>
+    </section>
+
+    <section class="card">
+      <h2>6 &middot; AE vs Premiere sablonu</h2>
+      <label>Sablon yollari (her satira bir tane)</label>
+      <textarea id="tplPaths" rows="4" spellcheck="false"></textarea>
+      <div class="row">
+        <div class="col"><label>Import sayisi</label><input type="number" id="tplRuns" value="5" min="1" max="50"></div>
+        <div class="col"><label>Track</label><input type="number" id="tplTrack" value="0" min="0"></div>
+      </div>
+      <button id="btnTemplates" class="btn slim">Karsilastir</button>
+    </section>
+
+    <section class="card">
+      <h2>7 &middot; Klip mekanigi</h2>
+      <label>AE sablonu</label>
+      <input type="text" id="mechPath" spellcheck="false">
+      <div class="row">
+        <div class="col"><label>Track</label><input type="number" id="mechTrack" value="0" min="0"></div>
+        <div class="col"><label>Sure (sn)</label><input type="number" id="mechDur" value="1.4" min="0.2" step="0.2"></div>
+      </div>
+      <button id="btnMechanics" class="btn slim">Test Et</button>
+    </section>
+
+    <section class="card">
+      <h2>8 &middot; Dogru yazma yolu</h2>
+      <label>AE sablonu</label>
+      <input type="text" id="wrPath" spellcheck="false">
+      <label>Yazilacak metin</label>
+      <input type="text" id="wrText" value="Merhaba dünya ÇĞİÖŞÜ">
+      <div class="row">
+        <div class="col"><label>Font</label><input type="text" id="wrFont" value="" spellcheck="false"></div>
+        <div class="col"><label>Boyut</label><input type="number" id="wrSize" value="0" min="0"></div>
+        <div class="col"><label>Track</label><input type="number" id="wrTrack" value="0" min="0"></div>
+      </div>
+      <button id="btnTextWrite" class="btn slim">Test Et</button>
+    </section>
+
+    <section class="card">
+      <h2>4 &middot; QE DOM</h2>
+      <label>Track adi</label>
+      <input type="text" id="qeTrackName" value="ODIUM SUBS" spellcheck="false">
+      <button id="btnQE" class="btn slim">Test Et</button>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <button id="btnOpenLogs" class="btn slim">Log Klasoru</button>
+        <button id="btnClear" class="btn slim">Log'u Temizle</button>
+      </div>
+      <p class="hint" id="logDirHint">&nbsp;</p>
+    </section>
+  </details>
 </div>
 
 <script src="lib/CSInterface.js"></script>
 <script src="js/premiereBridge.js"></script>
+<script src="js/studio.js"></script>
 <script src="js/app.js"></script>
