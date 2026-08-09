@@ -502,12 +502,17 @@ window.OdiumStudio = (function () {
     return path.join(outDir, base + ".srt");
   }
 
-  function saveSrt() {
+  /*
+    reveal=true sadece kullanici "SRT Kaydet"e bastiginda. "Premiere'e Al"
+    da ayni dosyayi yaziyor ama orada Explorer acmak Premiere'in onunu
+    kapatiyor ve akisi bolduruyor.
+  */
+  function saveSrt(reveal) {
     try {
       var target = srtPath();
       fs.writeFileSync(target, buildSrt(), "utf8");
       log("SRT kaydedildi: " + target);
-      if (childProcess) {
+      if (reveal && childProcess) {
         childProcess.spawn("explorer.exe", ["/select,", target], { detached: true, stdio: "ignore" }).unref();
       }
       return target;
@@ -518,7 +523,7 @@ window.OdiumStudio = (function () {
   }
 
   function importSrt() {
-    var target = saveSrt();
+    var target = saveSrt(false);
     if (!target) return;
 
     PremiereBridge.importCaptions({
@@ -578,7 +583,7 @@ window.OdiumStudio = (function () {
     $("btnRead").addEventListener("click", readSelection);
     $("btnTranscribe").addEventListener("click", transcribe);
     $("btnReplace").addEventListener("click", replaceAll);
-    $("btnSaveSrt").addEventListener("click", saveSrt);
+    $("btnSaveSrt").addEventListener("click", function () { saveSrt(true); });
     $("btnImportSrt").addEventListener("click", importSrt);
 
     log("Odium Subs hazir. Kok: " + root);

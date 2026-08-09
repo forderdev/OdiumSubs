@@ -150,6 +150,30 @@ Türkçe karakterler SRT'ye kadar bozulmadan geliyor.
 bilinen kapanış hatası. Çıkış koduna bakıp başarısız saysak her transkripsiyon boşa
 giderdi. Artık çıktı geçerliyse başarı sayılıyor, kod sadece loglanıyor.
 
+## M2 doğrulaması — gerçek Premiere'de uçtan uca (2026-08-10)
+
+Panel Premiere 26.0.2 içinde sürülerek test edildi. Temiz test projesi
+(`D:\Temp\odium-test.prproj`), kaynak `D:\andre.mp4` (5:10, Türkçe konuşma).
+
+| Adım | Sonuç |
+|---|---|
+| `PP_getSelection` | Klip, dosya yolu, sequence, "1 kullanım" — doğru |
+| Ses çıkarma | 5:10 → 9.5 MB, 16 kHz mono WAV |
+| Transkripsiyon | 90 segment, **308 kelime**, dil `tr` |
+| Öbekleme | **110 öbek** |
+| Editör | Birleştirme doğru: 110 → 109, süre `0:10.22–0:12.54` olarak birleşti |
+| SRT | 6.2 KB, sequence zamanına çevrilmiş |
+| `createCaptionTrack(item, "0")` | **İlk varyant tuttu**, `boolean` döndü |
+| Caption track | `C1 Subtitle` oluştu, 109 altyazı yerleşti |
+| Ekranda | `Nereden buldun bu herifi?` — videoya gömülü `Where did you find this guy?` ile aynı anda |
+
+**Karar 4'ün klasik altyazı yolu tamamlandı.** Kalan: MOGRT modu (M3).
+
+Ortam notu: uzaktan bağlantıda ekran 1280×720'ye düşüyor, Premiere 1024×768
+istiyor ve uyarı veriyor (çalışmaya engel değil). Panel penceresi 802 px yüksekti,
+ekrana sığmadığı için 700 px'e çekildi. Panel varsayılan yüksekliği bu yüzden
+manifest'te gözden geçirilmeli.
+
 ## Açık bilinmeyenler (M0 bunları ölçüyor)
 
 1. `importMGT` klip başına ms → animasyonlu modun eşiği
