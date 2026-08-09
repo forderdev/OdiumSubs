@@ -540,6 +540,174 @@ window.OdiumStudio = (function () {
   }
 
   /* ---------------------------------------------------------------- */
+  /* 5b. Efektli mod - MOGRT                                           */
+  /* ---------------------------------------------------------------- */
+
+  /*
+    Konum onayarlari. Motion Position normalize [x, y]: 0,0 sol ust; 1,1 sag alt.
+    Sablonun kendi konumu korunacaksa null doner.
+  */
+  var POSITIONS = {
+    bottom: [0.5, 0.82],
+    top: [0.5, 0.18],
+    center: [0.5, 0.5],
+    left: [0.28, 0.82],
+    right: [0.72, 0.82]
+  };
+
+  /*
+    Tek evalScript'te 1400 klip basmak Premiere'i dakikalarca kilitler ve
+    ilerleme gosterilemez. Paket paket gonderiyoruz.
+    M0 olcumu: AE sablonu ~97 ms/klip -> 40'lik paket ~4 sn.
+  */
+  var BATCH_SIZE = 40;
+  var WARN_THRESHOLD = 600;
+
+  function setMogrtProgress(ratio, text) {
+    show("mogrtProgWrap", true);
+    $("mogrtProgBar").style.width = Math.round(Math.max(0, Math.min(1, ratio)) * 100) + "%";
+    $("mogrtProgText").textContent = text || "";
+  }
+
+  function placeMogrt() {
+    if (state.busy) return;
+
+    var template = $("mogrtTemplate").value.replace(/^\s+|\s+$/g, "");
+    if (!template) { log("Sablon yolu bos."); return; }
+    if (!fs.existsSync(template)) {
+      // Depoya gore goreli yol da kabul edilsin.
+      var relative = path.join(root, template);
+      if (fs.existsSync(relative)) {
+        template = relative;
+      } else {
+        log("Sablon bulunamadi: " + template);
+        return;
+      }
+    }
+
+    var cues = cuesForSequence();
+    if (!cues || !cues.length) {
+      log("Klip timeline'da bulunamadi - efektli mod sequence konumu gerektiriyor.");
+      return;
+    }
+
+    if (cues.length > WARN_THRESHOLD) {
+      var estimate = Math.round(cues.length * 0.1);
+      var proceed = window.confirm(
+        cues.length + " obek basilacak, tahmini " + estimate + " saniye surer ve "
+        + "Premiere bu sure boyunca mesgul olur.\n\n"
+        + "Daha kisa tutmak icin timeline'da In/Out koyup tekrar yaziya dokebilirsin.\n\n"
+        + "Devam edilsin mi?"
+      );
+      if (!proceed) return;
+    }
+
+    var trackName = $("mogrtTrackName").value || "ODIUM SUBS";
+    var positionKey = $("mogrtPosition").value;
+    var position = positionKey ? POSITIONS[positionKey] : null;
+    var scale = Number($("mogrtScale").value) || 0;
+    var font = $("mogrtFont").value.replace(/^\s+|\s+$/g, "");
+    var fontSize = Number($("mogrtFontSize").value) || 0;
+    var logPath = path.join(root, ".probe", "place-mogrt.txt");
+
+    state.busy = true;
+    updateTranscribeButton();
+    $("btnPlaceMogrt").disabled = true;
+    setMogrtProgress(0, "track hazirlaniyor");
+
+    PremiereBridge.ensureSubtitleTrack({
+      trackName: trackName,
+      clear: false,
+      logPath: logPath
+    }).then(function (res) {
+      if (!res.ok) throw new Error(res.message);
+
+      var trackIndex = res.extra.trackIndex;
+      log(res.message);
+
+      // Track doluysa once sor - kullanicinin isini silmeyelim (karar 11).
+      if (res.extra.existing > 0) {
+        var ok = window.confirm(
+          "\"" + trackName + "\" track'inde " + res.extra.existing + " klip var.\n\n"
+          + "Bu track tamamen plugin'e ait sayiliyor. Icerigi silinip yeniden basilsin mi?"
+        );
+        if (!ok) {
+          throw new Error("Iptal edildi. Bos bir track adi ver ya da track'i elle temizle.");
+        }
+        return PremiereBridge.ensureSubtitleTrack({
+          trackName: trackName,
+          clear: true,
+          logPath: logPath
+        }).then(function (res2) {
+          if (!res2.ok) throw new Error(res2.message);
+          log("Temizlendi: " + res2.extra.cleared + " klip");
+          return res2.extra.trackIndex;
+        });
+      }
+
+      return trackIndex;
+    }).then(function (trackIndex) {
+      var total = cues.length;
+      var placed = 0;
+      var failed = 0;
+      var started = Date.now();
+      var offset = 0;
+
+      function nextBatch() {
+        if (offset >= total) {
+          var seconds = Math.round((Date.now() - started) / 1000);
+          setMogrtProgress(1, "bitti - " + placed + " klip, " + seconds + " sn");
+          log("Efektli basma bitti: " + placed + " klip"
+            + (failed ? ", " + failed + " basarisiz" : "")
+            + " (" + seconds + " sn, klip basi "
+            + Math.round((Date.now() - started) / Math.max(1, placed)) + " ms)");
+          state.busy = false;
+          $("btnPlaceMogrt").disabled = false;
+          updateTranscribeButton();
+          return;
+        }
+
+        var slice = [];
+        for (var i = offset; i < Math.min(offset + BATCH_SIZE, total); i++) {
+          slice.push({ start: cues[i].start, end: cues[i].end, text: cues[i].text });
+        }
+
+        return PremiereBridge.placeSubtitles({
+          mogrtPath: template,
+          trackIndex: trackIndex,
+          cues: slice,
+          font: font,
+          fontSize: fontSize,
+          position: position,
+          scale: scale,
+          logPath: logPath
+        }).then(function (res) {
+          if (!res.ok) throw new Error(res.message);
+
+          placed += res.extra.placed;
+          failed += res.extra.failed;
+          offset += slice.length;
+
+          if (res.extra.firstError) log("uyari: " + res.extra.firstError);
+
+          setMogrtProgress(offset / total, placed + " / " + total + " klip");
+          // Bir sonraki pakete gecmeden once UI'nin nefes almasi icin.
+          setTimeout(nextBatch, 30);
+        });
+      }
+
+      nextBatch();
+    }).catch(function (err) {
+      state.busy = false;
+      $("btnPlaceMogrt").disabled = false;
+      updateTranscribeButton();
+      setMogrtProgress(0, "");
+      show("mogrtProgWrap", false);
+      log("HATA: " + err.message);
+    });
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Baslat                                                            */
   /* ---------------------------------------------------------------- */
 
@@ -585,6 +753,17 @@ window.OdiumStudio = (function () {
     $("btnReplace").addEventListener("click", replaceAll);
     $("btnSaveSrt").addEventListener("click", function () { saveSrt(true); });
     $("btnImportSrt").addEventListener("click", importSrt);
+    $("btnPlaceMogrt").addEventListener("click", placeMogrt);
+
+    // Sablon yolu da hatirlansin.
+    var tpl = $("mogrtTemplate");
+    try {
+      var saved = localStorage.getItem("odium.subs.template");
+      if (saved) tpl.value = saved;
+    } catch (e) {}
+    tpl.addEventListener("change", function () {
+      try { localStorage.setItem("odium.subs.template", tpl.value); } catch (e2) {}
+    });
 
     log("Odium Subs hazir. Kok: " + root);
   }

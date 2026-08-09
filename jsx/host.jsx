@@ -502,6 +502,286 @@ function PP_importCaptions(payloadJson) {
   }
 }
 
+/* ================================================================== */
+/* M3 - ANIMASYONLU MOGRT YERLESTIRME                                  */
+/*                                                                     */
+/* M0'da olculen gercekler uzerine kurulu:                             */
+/*   - AE sablonu 97 ms/klip (ppro sablonu 4 kat yavas ve parametresiz)*/
+/*   - metin type-6 parametrenin JSON blob'unda: textEditValue         */
+/*   - fontTextRunLength guncellenmezse stil metnin bir kismina uygulan*/
+/*   - clip.end.ticks yazilabiliyor (sure)                             */
+/*   - Motion Position [x,y] ve Scale yazilabiliyor (konum/boyut)      */
+/*   - QE DOM addTracks + setName calisiyor                            */
+/* ================================================================== */
+
+/* Ada gore video track ara. Bulamazsa -1. */
+function PP_findTrackByName(seq, name) {
+  try {
+    for (var i = 0; i < seq.videoTracks.numTracks; i++) {
+      var t = seq.videoTracks[i];
+      var n = "";
+      try { n = String(t.name); } catch (e1) {}
+      if (n === name) return i;
+    }
+  } catch (e) {}
+  return -1;
+}
+
+/*
+  Altyazi track'ini hazirlar.
+    - varsa index'ini doner
+    - yoksa QE ile en uste yeni track acar ve adlandirir
+  clear=true ise track'teki tum klipleri siler (panel once kullaniciya sorar).
+*/
+function PP_ensureSubtitleTrack(payloadJson) {
+  var payload = PP_parseJson(payloadJson) || {};
+  var logger = new PP_Logger(payload.logPath);
+  var name = payload.trackName || "ODIUM SUBS";
+
+  try {
+    var seq = PP_activeSequence(logger);
+    if (!seq) return PP_result(false, "Aktif sequence yok.");
+
+    var index = PP_findTrackByName(seq, name);
+    var created = false;
+    var cleared = 0;
+
+    if (index < 0) {
+      logger.add("Track yok, aciliyor: " + name);
+      try {
+        app.enableQE();
+        var qseq = qe.project.getActiveSequence();
+        var before = qseq.numVideoTracks;
+        qseq.addTracks(1, before, 0, 0, 0, 0);
+        var after = qseq.numVideoTracks;
+        logger.add("  track " + before + " -> " + after);
+        if (after > before) {
+          qseq.getVideoTrackAt(after - 1).setName(name);
+          created = true;
+        }
+      } catch (eAdd) {
+        logger.add("  QE track ekleme HATA: " + eAdd);
+        return PP_result(false, "Track acilamadi: " + eAdd);
+      }
+      index = PP_findTrackByName(seq, name);
+      if (index < 0) return PP_result(false, "Track olusturuldu ama isimle bulunamadi.");
+    }
+
+    /* Mevcut klip sayisi - panel kullaniciya sormadan silmesin diye once bildirilir. */
+    var existing = 0;
+    try { existing = seq.videoTracks[index].clips.numItems; } catch (e2) {}
+
+    if (payload.clear && existing > 0) {
+      logger.add("Temizleniyor: " + existing + " klip");
+      try {
+        app.enableQE();
+        var qseq2 = qe.project.getActiveSequence();
+        var qtrack = qseq2.getVideoTrackAt(index);
+        // Sondan basa: silince index'ler kayiyor.
+        for (var c = qtrack.numItems - 1; c >= 0; c--) {
+          try {
+            var item = qtrack.getItemAt(c);
+            var mt = "";
+            try { mt = String(item.mediaType); } catch (eM) {}
+            // Bos aralik ("Empty") silinmez, sadece gercek klipler.
+            if (mt === "" || mt.toLowerCase().indexOf("empty") >= 0) continue;
+            item.remove(false, false);
+            cleared++;
+          } catch (eR) {}
+        }
+        logger.add("  silinen: " + cleared);
+      } catch (eClr) {
+        logger.add("  temizleme HATA: " + eClr);
+      }
+      try { existing = seq.videoTracks[index].clips.numItems; } catch (e3) {}
+    }
+
+    var extra = '{"trackIndex":' + index
+      + ',"created":' + (created ? "true" : "false")
+      + ',"cleared":' + cleared
+      + ',"existing":' + existing + "}";
+
+    return PP_result(true, "Track hazir: " + name + " (V" + (index + 1) + ")", extra);
+  } catch (e) {
+    logger.add("KRITIK HATA: " + e);
+    return PP_result(false, "Track hazirlanamadi: " + e);
+  }
+}
+
+/*
+  Metin parametresine yazar.
+  Type-6 parametrelerin degeri JSON blob; duz string yazmak font/boyut
+  bilgisini siliyor (Probe 7'de olculdu). Bu yuzden blob varsa parse edilip
+  alanlari degistiriliyor.
+*/
+function PP_writeTextParam(param, text, font, fontSize) {
+  var raw = "";
+  try { raw = String(param.getValue()); } catch (e1) { raw = ""; }
+
+  if (raw && raw.indexOf("textEditValue") >= 0) {
+    var obj = PP_parseJson(raw);
+    if (obj) {
+      obj.textEditValue = text;
+      obj.fontTextRunLength = [text.length];
+      if (font) obj.fontEditValue = [font];
+      if (fontSize) obj.fontSizeEditValue = [fontSize];
+      try {
+        param.setValue(JSON.stringify(obj), true);
+        return "blob";
+      } catch (eSet) {
+        return "blob-hata:" + eSet;
+      }
+    }
+  }
+
+  try {
+    param.setValue(text, true);
+    return "duz";
+  } catch (eS) {
+    return "hata:" + eS;
+  }
+}
+
+/* Klibin Motion efektinden konum ve boyut. Sablondan bagimsiz calisir (karar 9b). */
+function PP_applyMotion(clip, position, scale) {
+  var done = [];
+  try {
+    var comps = clip.components;
+    for (var i = 0; i < comps.numItems; i++) {
+      var name = "";
+      try { name = String(comps[i].displayName); } catch (e1) {}
+      if (name !== "Motion") continue;
+
+      var props = comps[i].properties;
+      for (var p = 0; p < props.numItems; p++) {
+        var pn = "";
+        try { pn = String(props[p].displayName); } catch (e2) {}
+
+        if (pn === "Position" && position) {
+          try { props[p].setValue(position, true); done.push("pos"); } catch (e3) {}
+        } else if (pn === "Scale" && scale) {
+          try { props[p].setValue(scale, true); done.push("scale"); } catch (e4) {}
+        }
+      }
+      break;
+    }
+  } catch (e) {}
+  return done.join("+");
+}
+
+/*
+  Obek paketini timeline'a basar.
+
+  payload:
+    mogrtPath, trackIndex, trackName
+    cues: [{ start, end, text }]   - saniye, sequence zamani
+    font, fontSize, position [x,y], scale
+    logPath
+
+  Panel obekleri PAKETLER halinde gonderiyor: tek evalScript'te 1400 klip
+  basmak Premiere'i dakikalarca kilitler ve ilerleme gosterilemez.
+*/
+function PP_placeSubtitles(payloadJson) {
+  var payload = PP_parseJson(payloadJson) || {};
+  var logger = new PP_Logger(payload.logPath);
+
+  try {
+    var seq = PP_activeSequence(logger);
+    if (!seq) return PP_result(false, "Aktif sequence yok.");
+
+    var mf = new File(payload.mogrtPath);
+    if (!mf.exists) return PP_result(false, "MOGRT bulunamadi: " + payload.mogrtPath);
+
+    var cues = payload.cues || [];
+    if (!cues.length) return PP_result(true, "Bu pakette obek yok.", '{"placed":0,"failed":0}');
+
+    var trackIndex = (payload.trackIndex === undefined || payload.trackIndex === null) ? 0 : payload.trackIndex;
+    var font = payload.font || "";
+    var fontSize = payload.fontSize ? Number(payload.fontSize) : 0;
+    var position = payload.position || null;
+    var scale = payload.scale ? Number(payload.scale) : 0;
+
+    var placed = 0;
+    var failed = 0;
+    var firstError = "";
+    var textMode = "";
+
+    for (var i = 0; i < cues.length; i++) {
+      var cue = cues[i];
+      var clip = null;
+
+      try {
+        clip = seq.importMGT(mf.fsName, PP_secondsToTicks(cue.start), trackIndex, 0);
+      } catch (eImp) {
+        if (!firstError) firstError = "importMGT: " + eImp;
+      }
+
+      if (!clip) {
+        failed++;
+        continue;
+      }
+
+      /* Sure: sablonun varsayilan uzunlugu obege cekiliyor. */
+      try {
+        var t = clip.end;
+        t.ticks = PP_secondsToTicks(cue.end);
+        clip.end = t;
+      } catch (eDur) {
+        if (!firstError) firstError = "sure: " + eDur;
+      }
+
+      /* Metin */
+      try {
+        var comp = clip.getMGTComponent();
+        if (comp) {
+          var wrote = false;
+          for (var p = 0; p < comp.properties.numItems; p++) {
+            var raw = "";
+            try { raw = String(comp.properties[p].getValue()); } catch (eV) { continue; }
+            if (raw.indexOf("textEditValue") < 0) continue;
+            textMode = PP_writeTextParam(comp.properties[p], String(cue.text), font, fontSize);
+            wrote = true;
+            break;
+          }
+          /* Blob tasiyan parametre yoksa isimle "Text" ara. */
+          if (!wrote) {
+            for (var p2 = 0; p2 < comp.properties.numItems; p2++) {
+              var dn = "";
+              try { dn = String(comp.properties[p2].displayName); } catch (eD) {}
+              if (String(dn).toLowerCase() !== "text") continue;
+              textMode = PP_writeTextParam(comp.properties[p2], String(cue.text), font, fontSize);
+              wrote = true;
+              break;
+            }
+          }
+          if (!wrote && !firstError) firstError = "metin parametresi bulunamadi";
+        } else if (!firstError) {
+          firstError = "getMGTComponent null - AE sablonu kullan";
+        }
+      } catch (eTxt) {
+        if (!firstError) firstError = "metin: " + eTxt;
+      }
+
+      /* Konum / boyut */
+      if (position || scale) PP_applyMotion(clip, position, scale);
+
+      placed++;
+    }
+
+    if (firstError) logger.add("ilk hata: " + firstError);
+    logger.add("paket: yerlesen=" + placed + " basarisiz=" + failed + " metinYolu=" + textMode);
+
+    var extra = '{"placed":' + placed + ',"failed":' + failed
+      + ',"textMode":' + PP_jsonString(textMode)
+      + ',"firstError":' + PP_jsonString(firstError) + "}";
+
+    return PP_result(true, placed + " klip yerlesti" + (failed ? ", " + failed + " basarisiz" : "") + ".", extra);
+  } catch (e) {
+    logger.add("KRITIK HATA: " + e);
+    return PP_result(false, "Yerlestirme hatasi: " + e);
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* PROBE 0 - baglanti testi                                            */
 /* ------------------------------------------------------------------ */

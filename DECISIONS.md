@@ -174,6 +174,27 @@ istiyor ve uyarı veriyor (çalışmaya engel değil). Panel penceresi 802 px y�
 ekrana sığmadığı için 700 px'e çekildi. Panel varsayılan yüksekliği bu yüzden
 manifest'te gözden geçirilmeli.
 
+## M3 doğrulaması — MOGRT yerleştirme (2026-08-10)
+
+Adobe'nin AE şablonuyla (`[AE] Sports Lower Third Side.mogrt`) test edildi;
+kendi şablonumuz henüz yok ama parametre sözleşmesi aynı.
+
+| Ölçülen | Sonuç |
+|---|---|
+| Öbek sayısı | 112 (5:10 video, 310 kelime) |
+| Yerleşen klip | **112, 0 hata** |
+| Metin yazma yolu | `blob` — JSON blob parse edilip yazıldı, font korunur |
+| Klip süresi | Tooltip: `Duration 00:00:02:08` — öbek süresine çekilmiş |
+| Track | `MZ.TrackName = ODIUM SUBS`, Index 3 (V4), QE ile açıldı ve adlandırıldı |
+| Kaydedilmiş projede | ODIUM SUBS track'inde **112 TrackItem** |
+| Paketleme | 40'lık paketler, panel ilerleme çubuğu akıyor, Premiere donmuyor |
+
+**Doğrulanmayan tek şey:** yerleşen kliplerin ekranda metni gösterdiği görsel olarak
+teyit edilmedi — uzaktan bağlantıda ekran 1280×720 ve Premiere düzeni bu çözünürlükte
+Program Monitor'ü göstermeye elverişli değildi. Mekanizmanın kendisi Probe 8'de görsel
+olarak kanıtlanmıştı (blob yazımı → ekranda Türkçe metin, font korunmuş). Kendi şablon
+gelince ilk bakılacak şey bu.
+
 ## Açık bilinmeyenler (M0 bunları ölçüyor)
 
 1. `importMGT` klip başına ms → animasyonlu modun eşiği

@@ -148,12 +148,62 @@
 
     <div class="row">
       <button id="btnSaveSrt" class="btn">SRT Kaydet</button>
-      <button id="btnImportSrt" class="btn primary">Premiere'e Al</button>
+      <button id="btnImportSrt" class="btn">Caption Track'e Bas</button>
     </div>
     <p class="hint" id="outputHint">
-      Klasik altyazi yolu: SRT projeye alinir, caption track'e dusurulur.
-      Animasyonlu MOGRT modu M3'te geliyor.
+      Klasik yol: SRT projeye alinir, caption track'e dusurulur. Animasyon yok.
     </p>
+
+    <details class="sub-details" id="mogrtBlock">
+      <summary>Efektli mod - MOGRT</summary>
+
+      <label>Sablon (.mogrt)</label>
+      <input type="text" id="mogrtTemplate" spellcheck="false" placeholder="templates\odium-zoom-pop.mogrt">
+
+      <div class="row">
+        <div class="col">
+          <label>Konum</label>
+          <select id="mogrtPosition">
+            <option value="bottom">Alt</option>
+            <option value="top">Ust</option>
+            <option value="center">Orta</option>
+            <option value="left">Sol alt</option>
+            <option value="right">Sag alt</option>
+            <option value="">Sablonun kendi konumu</option>
+          </select>
+        </div>
+        <div class="col">
+          <label>Boyut %</label>
+          <input type="number" id="mogrtScale" value="100" min="10" max="400">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col">
+          <label>Font <span class="mut">(bos = sablonunki)</span></label>
+          <input type="text" id="mogrtFont" spellcheck="false" placeholder="Montserrat-Bold">
+        </div>
+        <div class="col">
+          <label>Punto (0 = sablonunki)</label>
+          <input type="number" id="mogrtFontSize" value="0" min="0">
+        </div>
+      </div>
+
+      <label>Track adi</label>
+      <input type="text" id="mogrtTrackName" value="ODIUM SUBS" spellcheck="false">
+
+      <button id="btnPlaceMogrt" class="btn primary">Efektli Bas</button>
+
+      <div class="progress hidden" id="mogrtProgWrap">
+        <div class="progress-bar"><i id="mogrtProgBar"></i></div>
+        <div class="progress-text" id="mogrtProgText">&nbsp;</div>
+      </div>
+
+      <p class="hint" id="mogrtHint">
+        Sablon <b>AE'de yazilmis</b> olmali. Premiere'de yazilan sablonlar
+        Essential Graphics parametresi tasimiyor ve 4 kat yavas basiliyor.
+      </p>
+    </details>
   </section>
 
   <pre id="log" class="log"></pre>

@@ -62,6 +62,8 @@
     /* Uretim fonksiyonlari */
     getSelection: function () { return callHost("PP_getSelection"); },
     importCaptions: function (payload) { return callHost("PP_importCaptions", payload); },
+    ensureSubtitleTrack: function (payload) { return callHost("PP_ensureSubtitleTrack", payload); },
+    placeSubtitles: function (payload) { return callHost("PP_placeSubtitles", payload); },
 
     /* Olcum probe'lari */
     probeSelection: function (payload) { return callHost("PP_probeSelection", payload); },
