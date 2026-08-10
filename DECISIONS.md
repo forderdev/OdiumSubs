@@ -268,6 +268,30 @@ Ayrıca: sürüm numarasını PowerShell ile değiştirirken `manifest.xml`'e **
 eklendi, `<?xml` öncesi BOM manifesti geçersiz kılıyor. Kaynak dosyaları PowerShell
 `Set-Content` ile düzenlemekten kaçınılmalı.
 
+## Renk ayarı (2026-08-10)
+
+Şablona `Animate ► Fill Color > RGB` ile bir renk animatörü eklenip Essential
+Graphics'e verildi. AE parametreyi **`Animator 1 Fill Color`** diye adlandırıyor,
+bu yüzden panel isme tam eşleme yapmıyor: içinde `color`/`colour`/`renk` geçen ilk
+parametreyi kullanıyor.
+
+**Yazma yolu ve argüman sırası ölçüldü:**
+
+| Deneme | Sonuç |
+|---|---|
+| `setValue([r,g,b,a])` 0-1 dizi | `Illegal Parameter type` |
+| `setColorValue(255, 212, 0, 255)` — (r,g,b,a) sanılarak | ekranda **macenta** |
+| `setColorValue(255, 255, 212, 0)` | ekranda **kırmızı** |
+| `setColorValue(alpha, r, g, b)` = `(255, 255, 212, 0)` | ekranda **sarı** ✓ |
+
+Doğru imza: **`setColorValue(alpha, red, green, blue, updateUI)`**, değerler **0-255**.
+İlk argüman alpha olduğu için (r,g,b,a) varsayımı bütün kanalları bir sola kaydırıyor —
+Probe 8'de Adobe şablonunda görülen mor da aynı kaymaydı, o zaman yanlış teşhis etmiştim.
+
+Panelde renk seçici: `<input type="color">` + 6 hazır renk + "uygula" kutucuğu.
+Şablon renk parametresi taşımıyorsa log'a "renk parametresi yok, atlandı" düşer,
+basma işlemi bozulmaz.
+
 ## Açık bilinmeyenler (M0 bunları ölçüyor)
 
 1. `importMGT` klip başına ms → animasyonlu modun eşiği

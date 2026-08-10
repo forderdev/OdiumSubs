@@ -108,13 +108,21 @@ Böylece klip uzayıp kısaldığında sadece ortadaki sabit kısım esner.
 Essential Graphics panelinde şablonun adını yaz, sonra aşağıdakileri **tam bu isimlerle** ekle.
 İsim değiştirmek serbest değil; plugin bunları isimle arıyor.
 
-| Parametre adı | Nasıl eklenir | Zorunlu |
+| Parametre | Nasıl eklenir | Zorunlu |
 |---|---|---|
-| `Text` | `TEXT` katmanının **Source Text** özelliğini panele sürükle | **evet** |
-| `Fill Color` | `TEXT` → Text → Animator → Fill Color, ya da doğrudan renk özelliği | hayır |
-| `Stroke Width` | `TEXT` stroke genişliği (0 = kapalı) | hayır |
-| `Stroke Color` | `TEXT` stroke rengi | hayır |
-| `BG Opacity` | `BG` katmanının Opacity'si (0 = kutu yok) | hayır |
+| Metin | `TEXT` katmanının **Source Text** özelliğini panele sürükle, adını `Text` yap | **evet** |
+| Yazı rengi | `TEXT` katmanı → **Animate ►** → **Fill Color > RGB** → oluşan `Animator 1 > Fill Color` özelliğini panele sürükle | hayır |
+| Kontur rengi | Aynı `Animate ►` menüsünden **Stroke Color** | hayır |
+| Kontur kalınlığı | Aynı menüden **Stroke Width** | hayır |
+| Arka plan | `BG` shape katmanının **Fill** rengini ya da **Opacity**'sini sürükle | hayır |
+
+**Renk parametresinin adı önemli değil.** AE ona `Animator 1 Fill Color` gibi bir ad
+veriyor; panel isme tam eşleme yapmıyor, içinde `color`/`renk` geçen ilk parametreyi
+buluyor. Adını değiştirirsen de çalışır.
+
+**Character panelindeki renk dışa verilemez.** Orada seçtiğin renk şablona gömülü kalır.
+Panelden renk ayarlanabilmesi için animator eklemek şart; animator, Character panelindeki
+rengi ezer.
 
 **Font ve boyut ayrı parametre değil.** `Source Text`'i panele eklediğinde AE onun
 yanında font düzenleme kutucuklarını da gösterir:

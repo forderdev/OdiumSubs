@@ -115,7 +115,7 @@ window.OdiumStudio = (function () {
     "optLanguage", "optModel", "optScope", "optStart", "optSeconds", "optPrompt",
     "optMaxWords", "optMaxDuration", "optMaxChars", "optPause", "optMinDuration", "optGapMerge",
     "mogrtTemplate", "fontFamily", "fontStyle", "mogrtFontSize", "mogrtPosition",
-    "mogrtScale", "mogrtTrackName"
+    "mogrtScale", "mogrtTrackName", "mogrtColor"
   ];
 
   function saveSettings() {
@@ -699,6 +699,29 @@ window.OdiumStudio = (function () {
   /* 5. Efektli mod - MOGRT                                            */
   /* ---------------------------------------------------------------- */
 
+  /*
+    "#ffd400" -> [1, 0.831, 0, 1]
+    AE'den gelen renk kontrolu 0-1 araliginda RGBA bekliyor (olculdu:
+    sablonun varsayilan degeri [1,1,1,1] = beyaz). 0-255 gondermek yanlis
+    renk uretiyor.
+  */
+  function hexToRgba01(hex) {
+    var clean = String(hex).replace("#", "");
+    if (clean.length === 3) {
+      clean = clean.charAt(0) + clean.charAt(0)
+            + clean.charAt(1) + clean.charAt(1)
+            + clean.charAt(2) + clean.charAt(2);
+    }
+    if (clean.length !== 6) return null;
+
+    var r = parseInt(clean.substring(0, 2), 16);
+    var g = parseInt(clean.substring(2, 4), 16);
+    var b = parseInt(clean.substring(4, 6), 16);
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
+
+    return [r / 255, g / 255, b / 255, 1];
+  }
+
   /* Motion Position normalize [x, y]: 0,0 sol ust; 1,1 sag alt. */
   var POSITIONS = {
     bottom: [0.5, 0.82],
@@ -759,6 +782,7 @@ window.OdiumStudio = (function () {
       fontSize: Number($("mogrtFontSize").value) || 0,
       position: position,
       scale: Number($("mogrtScale").value) || 0,
+      color: $("mogrtColorOn").checked ? hexToRgba01($("mogrtColor").value) : null,
       logPath: logPath
     };
 
@@ -965,6 +989,15 @@ window.OdiumStudio = (function () {
       saveSettings();
     });
     $("fontStyle").addEventListener("change", updateFontNote);
+
+    var swatches = document.querySelectorAll(".swatch");
+    for (var s = 0; s < swatches.length; s++) {
+      swatches[s].addEventListener("click", function () {
+        $("mogrtColor").value = this.getAttribute("data-color");
+        $("mogrtColorOn").checked = true;
+        saveSettings();
+      });
+    }
 
     $("styleMogrt").addEventListener("click", function () { setStyle("mogrt"); });
     $("styleCaption").addEventListener("click", function () { setStyle("caption"); });

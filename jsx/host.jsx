@@ -719,6 +719,60 @@ function PP_applyClipSpeed(trackIndex, itemIndex, percent) {
 }
 
 /*
+  Renk parametresini bulur ve yazar.
+
+  Olculen gercekler:
+    - AE'den gelen renk kontrolu type=4, degeri [r,g,b,a] ve aralik 0-1.
+      (Probe 8'de 0-255 gonderilmisti, ekranda mor cikmisti - sebebi buydu.)
+    - Parametrenin adi AE'nin verdigi ada gore degisiyor: kullanicinin
+      sablonunda "Animator 1 Fill Color". Bu yuzden isme tam esleme yapmiyoruz,
+      icinde "color"/"colour"/"renk" gecen ilk parametreyi aliyoruz.
+
+  rgba: [0..1, 0..1, 0..1, 0..1]
+*/
+function PP_findColorParam(comp) {
+  try {
+    for (var i = 0; i < comp.properties.numItems; i++) {
+      var name = "";
+      try { name = String(comp.properties[i].displayName).toLowerCase(); } catch (e1) { continue; }
+      if (name.indexOf("color") < 0 && name.indexOf("colour") < 0 && name.indexOf("renk") < 0) continue;
+      return { index: i, name: name };
+    }
+  } catch (e) {}
+  return null;
+}
+
+function PP_writeColorParam(param, rgba) {
+  var before = "";
+  try { before = String(param.getValue()); } catch (e1) {}
+
+  var r = Math.round(rgba[0] * 255);
+  var g = Math.round(rgba[1] * 255);
+  var b = Math.round(rgba[2] * 255);
+  var a = Math.round((rgba[3] === undefined ? 1 : rgba[3]) * 255);
+
+  /*
+    ARGUMAN SIRASI (A, R, G, B) - olculdu.
+    setValue([r,g,b,a]) "Illegal Parameter type" atiyor; yazma yolu
+    setColorValue ve 0-255 bekliyor.
+
+    Sira (r,g,b,a) sanilirsa yanlis renk cikiyor: sari (255,212,0) gonderilince
+    ekranda RGB(212,0,255) yani macenta goruldu - ilk arguman alpha olarak
+    yutulup digerleri bir sola kayiyor. Probe 8'deki mor da ayni kaymaydi.
+  */
+  try {
+    param.setColorValue(a, r, g, b, true);
+  } catch (e2) {
+    return "HATA: " + e2;
+  }
+
+  var after = "";
+  try { after = String(param.getValue()); } catch (e3) {}
+  return "istenen rgb=" + r + "," + g + "," + b + " (alpha " + a + ")"
+    + " oncesi=" + before + " sonrasi=" + after;
+}
+
+/*
   Klibin Motion efektinden konum ve boyut. Sablondan bagimsiz calisir (karar 9b).
   Yazdiktan sonra geri okur: ilk gercek testte istenen [0.5,0.82] yerine
   ekranda 960/98 cikti, yani yazilan deger ile olusan deger ayni degil.
@@ -794,6 +848,7 @@ function PP_placeSubtitles(payloadJson) {
     var position = payload.position || null;
     var scale = payload.scale ? Number(payload.scale) : 0;
     var speedPercent = payload.speedPercent ? Number(payload.speedPercent) : 100;
+    var color = (payload.color && payload.color.length >= 3) ? payload.color : null;
 
     var placed = 0;
     var failed = 0;
@@ -860,6 +915,17 @@ function PP_placeSubtitles(payloadJson) {
             }
           }
           if (!wrote && !firstError) firstError = "metin parametresi bulunamadi";
+
+          /* Renk - sablon renk parametresi acmissa */
+          if (color) {
+            var colorParam = PP_findColorParam(comp);
+            if (colorParam) {
+              var colorReport = PP_writeColorParam(comp.properties[colorParam.index], color);
+              if (i === 0) logger.add("Renk (\"" + colorParam.name + "\"): " + colorReport);
+            } else if (i === 0) {
+              logger.add("Renk: sablonda renk parametresi yok, atlandi.");
+            }
+          }
         } else if (!firstError) {
           firstError = "getMGTComponent null - AE sablonu kullan";
         }
