@@ -591,15 +591,18 @@ window.OdiumStudio = (function () {
       return;
     }
 
-    if (cues.length > WARN_THRESHOLD) {
+    /*
+      window.confirm KULLANMA. CEP paneli icinde acilan native onay diyalogu
+      bu ortamda govdesi olmayan bir cubuk olarak ciziliyor ve JS thread'ini
+      kilitliyor - panel tamamen donuyor. Onay panel icindeki kutucuklardan
+      aliniyor, kullanici karari onceden veriyor.
+    */
+    if (cues.length > WARN_THRESHOLD && !$("mogrtForce").checked) {
       var estimate = Math.round(cues.length * 0.1);
-      var proceed = window.confirm(
-        cues.length + " obek basilacak, tahmini " + estimate + " saniye surer ve "
-        + "Premiere bu sure boyunca mesgul olur.\n\n"
-        + "Daha kisa tutmak icin timeline'da In/Out koyup tekrar yaziya dokebilirsin.\n\n"
-        + "Devam edilsin mi?"
-      );
-      if (!proceed) return;
+      log(cues.length + " obek var, tahmini " + estimate + " sn surer ve Premiere o sure mesgul olur.");
+      log("Devam etmek icin \"Cok obek olsa da bas\" kutucugunu isaretle, "
+        + "ya da timeline'da In/Out koyup tekrar yaziya dok.");
+      return;
     }
 
     var trackName = $("mogrtTrackName").value || "ODIUM SUBS";
@@ -625,14 +628,14 @@ window.OdiumStudio = (function () {
       var trackIndex = res.extra.trackIndex;
       log(res.message);
 
-      // Track doluysa once sor - kullanicinin isini silmeyelim (karar 11).
+      // Track doluysa kullanicinin isini sessizce silme (karar 11).
+      // Karar onceden kutucukla veriliyor; native onay diyalogu paneli kilitliyor.
       if (res.extra.existing > 0) {
-        var ok = window.confirm(
-          "\"" + trackName + "\" track'inde " + res.extra.existing + " klip var.\n\n"
-          + "Bu track tamamen plugin'e ait sayiliyor. Icerigi silinip yeniden basilsin mi?"
-        );
-        if (!ok) {
-          throw new Error("Iptal edildi. Bos bir track adi ver ya da track'i elle temizle.");
+        if (!$("mogrtClear").checked) {
+          throw new Error(
+            "\"" + trackName + "\" track'inde " + res.extra.existing + " klip var. "
+            + "\"Track doluysa once temizle\" kutucugunu isaretle ya da baska bir track adi ver."
+          );
         }
         return PremiereBridge.ensureSubtitleTrack({
           trackName: trackName,

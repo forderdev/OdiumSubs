@@ -123,6 +123,24 @@ textarea {
 
 input:focus, textarea:focus, select:focus { outline: none; border-color: var(--gold); }
 
+label.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+  color: var(--text);
+  margin: 7px 0 0;
+  cursor: pointer;
+}
+
+label.check input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--gold);
+}
+
 .row { display: flex; gap: 8px; align-items: flex-end; }
 .col { flex: 1; min-width: 0; }
 

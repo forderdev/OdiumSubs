@@ -328,6 +328,16 @@ function PP_getSelection() {
       try { mediaType = String(clip.mediaType); } catch (e1) {}
       if (mediaType && mediaType.toLowerCase().indexOf("video") < 0) continue;
 
+      /*
+        Plugin'in kendi bastigi altyazi kliplerini kaynak sanmasin.
+        MOGRT klipleri secili kaldiginda (basma sonrasi normal durum)
+        kullanici Project panelinden baska bir klip secse bile timeline
+        secimi one geciyordu.
+      */
+      try {
+        if (typeof clip.isMGT === "function" && clip.isMGT()) continue;
+      } catch (eMgt) {}
+
       try {
         if (clip.projectItem) {
           projectItem = clip.projectItem;
@@ -642,9 +652,14 @@ function PP_writeTextParam(param, text, font, fontSize) {
   }
 }
 
-/* Klibin Motion efektinden konum ve boyut. Sablondan bagimsiz calisir (karar 9b). */
+/*
+  Klibin Motion efektinden konum ve boyut. Sablondan bagimsiz calisir (karar 9b).
+  Yazdiktan sonra geri okur: ilk gercek testte istenen [0.5,0.82] yerine
+  ekranda 960/98 cikti, yani yazilan deger ile olusan deger ayni degil.
+  Geri okuma log'a duserse sebep tahminle degil veriyle bulunur.
+*/
 function PP_applyMotion(clip, position, scale) {
-  var done = [];
+  var report = [];
   try {
     var comps = clip.components;
     for (var i = 0; i < comps.numItems; i++) {
@@ -658,15 +673,27 @@ function PP_applyMotion(clip, position, scale) {
         try { pn = String(props[p].displayName); } catch (e2) {}
 
         if (pn === "Position" && position) {
-          try { props[p].setValue(position, true); done.push("pos"); } catch (e3) {}
+          var beforePos = "";
+          try { beforePos = String(props[p].getValue()); } catch (e3) {}
+          try { props[p].setValue(position, true); } catch (e4) {}
+          var afterPos = "";
+          try { afterPos = String(props[p].getValue()); } catch (e5) {}
+          report.push("Position istenen=" + position.join(",") + " oncesi=" + beforePos + " sonrasi=" + afterPos);
         } else if (pn === "Scale" && scale) {
-          try { props[p].setValue(scale, true); done.push("scale"); } catch (e4) {}
+          var beforeScale = "";
+          try { beforeScale = String(props[p].getValue()); } catch (e6) {}
+          try { props[p].setValue(scale, true); } catch (e7) {}
+          var afterScale = "";
+          try { afterScale = String(props[p].getValue()); } catch (e8) {}
+          report.push("Scale istenen=" + scale + " oncesi=" + beforeScale + " sonrasi=" + afterScale);
         }
       }
       break;
     }
-  } catch (e) {}
-  return done.join("+");
+  } catch (e) {
+    report.push("HATA: " + e);
+  }
+  return report.join(" | ");
 }
 
 /*
@@ -762,8 +789,11 @@ function PP_placeSubtitles(payloadJson) {
         if (!firstError) firstError = "metin: " + eTxt;
       }
 
-      /* Konum / boyut */
-      if (position || scale) PP_applyMotion(clip, position, scale);
+      /* Konum / boyut - ilk klipte geri okuma log'a yazilir */
+      if (position || scale) {
+        var motionReport = PP_applyMotion(clip, position, scale);
+        if (i === 0 && motionReport) logger.add("Motion: " + motionReport);
+      }
 
       placed++;
     }

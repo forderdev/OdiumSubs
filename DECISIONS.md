@@ -189,11 +189,38 @@ kendi şablonumuz henüz yok ama parametre sözleşmesi aynı.
 | Kaydedilmiş projede | ODIUM SUBS track'inde **112 TrackItem** |
 | Paketleme | 40'lık paketler, panel ilerleme çubuğu akıyor, Premiere donmuyor |
 
-**Doğrulanmayan tek şey:** yerleşen kliplerin ekranda metni gösterdiği görsel olarak
-teyit edilmedi — uzaktan bağlantıda ekran 1280×720 ve Premiere düzeni bu çözünürlükte
-Program Monitor'ü göstermeye elverişli değildi. Mekanizmanın kendisi Probe 8'de görsel
-olarak kanıtlanmıştı (blob yazımı → ekranda Türkçe metin, font korunmuş). Kendi şablon
-gelince ilk bakılacak şey bu.
+### Kendi şablonumuzla doğrulama (`odium-zoom-pop.mogrt`)
+
+Şablon sözleşmeye birebir uyuyor: `authorApp: aefx`, tek kontrol `type=6` adı **`Text`**,
+`capPropFontEdit: true`, `capPropFontSizeEdit: true`, gömülü font `FredokaOne-Regular`, punto 90.
+
+| Ölçülen | Sonuç |
+|---|---|
+| Track temizleme | `Temizlendi: 112 klip` — QE ile eski içerik silindi |
+| Yerleşen | **109 klip, 0 hata** |
+| Ekranda | `Üstüne dublej alamam.` · `İşi bilenlerle çalışmak` — doğru zamanda |
+| Türkçe glifler | İ, ş, ı, ç, ö, ü hepsi tek fontta, düşme yok |
+| Font override | `Montserrat-Black` uygulandı (şablonun Fredoka'sı ezildi) |
+| Motion Position | `istenen=0.5,0.82 → sonrasi=0.5,0.82` — konum doğru yazılıyor |
+
+**Performans notu:** bu çalıştırmada klip başı **391 ms** (109 klip / 43 sn), oysa boş
+sequence'te Adobe şablonuyla 97 ms ölçülmüştü. Aradaki fark sequence doluluğundan
+geliyor gibi — 4 video track, 1 caption track, yüzlerce klip. Karar 14'ün eşiği
+bu gerçek sayıya göre gözden geçirilmeli: 391 ms ile 1400 klip 9 dakika eder.
+
+**Fredoka One uyarısı geçerliliğini koruyor:** şablonun gömülü fontu hâlâ Fredoka One.
+Panel font alanı boş bırakılırsa Türkçe'de Ç/Ğ/Ş bozulur. Ya şablonu Montserrat ile
+yeniden export et, ya panelde font alanını hep dolu tut.
+
+### Bulunan iki hata (düzeltildi)
+
+1. **`window.confirm` paneli kilitliyor.** CEP panelinden açılan native onay diyalogu
+   bu ortamda gövdesi olmayan ince bir çubuk olarak çiziliyor, tıklanamıyor ve JS
+   thread'ini bloke ediyor — panel tamamen donuyor. Onaylar panel içi kutucuklara
+   taşındı (`Track doluysa once temizle`, `Cok obek olsa da bas`).
+2. **Kendi bastığımız altyazıları kaynak sanma.** MOGRT klipleri seçili kalınca
+   (basma sonrası normal durum) kullanıcı Project panelinden başka klip seçse bile
+   timeline seçimi öne geçiyordu. `PP_getSelection` artık `isMGT()` olan klipleri atlıyor.
 
 ## Açık bilinmeyenler (M0 bunları ölçüyor)
 
