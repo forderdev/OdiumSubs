@@ -27,15 +27,39 @@ AE şablonuyla 97 ms/klip, parametreler isimle yazılabiliyor, font korunuyor.
 
 ---
 
-## Kurulum sırası
+## Kurulum — kullanıcı
 
-1. `tools\Dev-Link.bat` — paneli kur, CEP debug modunu aç
-2. `node tools\install-whisper.js` — Faster-Whisper-XXL (1.36 GB, tek seferlik).
-   Panel de ilk transkripsiyonda kendisi indirir; bu sadece önden almak için
+`OdiumSubsSetup.exe`'yi çalıştır. Yönetici gerekmez.
+
+Kurulum ne yapar:
+- Uzantıyı `%APPDATA%\Adobe\CEP\extensions\OdiumSubs` altına koyar
+- İmzasız uzantı izni için CEP debug modunu açar (`HKCU\Software\Adobe\CSXS.9..14`)
+
+Sonra Premiere'i aç → `Window > Extensions > Odium Subs`.
+
+**İlk transkripsiyonda iki indirme olur, ikisi de tek seferlik:**
+- Faster-Whisper-XXL ~1.4 GB (ffmpeg de içinde geliyor, ayrıca kurmana gerek yok)
+- `large-v3-turbo` dil modeli ~1.6 GB
+
+Kaldırmak için Denetim Masası → Odium Subs. İndirilen whisper ve ara dosyalar da silinir.
+
+### Gereksinimler
+
+- Premiere Pro 2022 (22.0) veya üstü — geliştirme ve test 26.0.2'de yapıldı
+- Windows
+- NVIDIA GPU şart değil; yoksa CPU'ya düşer ve yavaşlar
+  (3060 Ti'de 32× realtime, CPU'da ~1×)
+
+---
+
+## Kurulum — geliştirme
+
+1. `tools\Dev-Link.bat` — kopyalamak yerine depoya junction açar, CEP debug modunu açar
+2. `node tools\install-whisper.js` — whisper'ı önden indirir (panel de kendisi indirir)
 3. Premiere'i tamamen kapat/aç → `Window > Extensions > Odium Subs`
 
-ffmpeg PATH'te olmalı ya da `tools/ffmpeg.exe` olarak konmalı.
-Whisper modelleri ilk çalıştırmada iner (`large-v3-turbo` ~1.6 GB).
+Panel kodunu değiştirince paneli kapatıp açmak yetmiyor; **Premiere'i yeniden başlat**
+(CEP `host.jsx`'i ve JS'i panel ömrü boyunca önbelleğe alıyor).
 
 ### Premiere'siz test
 
@@ -43,6 +67,30 @@ Whisper modelleri ilk çalıştırmada iner (`large-v3-turbo` ~1.6 GB).
 node engine\test\run-tests.js
 node tools\smoke-test.js "D:\video.mp4" --model large-v3-turbo --seconds 60
 ```
+
+### Kurulum paketi üretme
+
+```bash
+"C:\Program Files\Inno Setup 7\ISCC.exe" "installer\OdiumSubs.iss"
+```
+
+Çıktı: `dist\OdiumSubsSetup.exe`. Whisper pakete girmez.
+
+Sürüm yükseltirken **üç yeri** birlikte değiştir: `CSXS/manifest.xml`,
+`client/index.html`, `installer/OdiumSubs.iss` (`AppVersion`) — ve `version.json`.
+
+### Uzaktan güncelleme
+
+`version.json` içindeki `manifestUrl` boşken panel güncelleme kontrolü yapmaz.
+Doldurmak için:
+
+1. Depoyu GitHub'a koy, `version.json`'u repo kökünde tut
+2. `manifestUrl` = o dosyanın **raw** adresi
+3. `setupUrl` = Releases'in `latest` linki (her sürümde değiştirmen gerekmez)
+
+Panel açılışta manifesti okur; uzaktaki sürüm daha yeniyse başlıktaki rozet
+**"guncelle vX.Y.Z"** olur, tıklayınca setup adresini tarayıcıda açar.
+İnternet yoksa sessiz geçer.
 
 ---
 

@@ -49,6 +49,7 @@ body {
 
 .pill.ok { color: var(--ok); border-color: var(--ok); }
 .pill.err { color: var(--err); border-color: var(--err); }
+.pill.update { color: #16150f; background: var(--gold); border-color: var(--gold); font-weight: 600; }
 
 /* ---------- kartlar ---------- */
 

@@ -20,24 +20,53 @@ var OUT_TIME_RE = /out_time_ms=(\d+)/g;
 /*
   ffmpeg'i sirayla arar:
     1) acikca verilen yol
-    2) <toolsDir>/ffmpeg.exe   (installer buraya koyar)
-    3) PATH
+    2) Faster-Whisper-XXL paketinin ICINDEKI ffmpeg
+    3) <toolsDir>/ffmpeg.exe
+    4) PATH
   Bulamazsa null doner - cagiran taraf kullaniciya anlamli hata verir.
+
+  (2) onemli: XXL paketi 79 MB'lik kendi ffmpeg.exe'siyle geliyor. Whisper
+  zaten kuruluyor oldugu icin ayrica ffmpeg kurmaya/indirmeye gerek yok -
+  dagitimda bir bagimlilik daha eksiliyor.
 */
 function resolveFfmpeg(options) {
   options = options || {};
+  var exeName = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
 
   if (options.ffmpegPath && fs.existsSync(options.ffmpegPath)) {
     return options.ffmpegPath;
   }
 
   if (options.toolsDir) {
-    var bundled = path.join(options.toolsDir, process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
+    var whisperDir = path.join(options.toolsDir, "faster-whisper-xxl");
+    var inWhisper = findFileInTree(whisperDir, exeName, 2);
+    if (inWhisper) return inWhisper;
+
+    var bundled = path.join(options.toolsDir, exeName);
     if (fs.existsSync(bundled)) return bundled;
   }
 
-  var fromPath = whichSync(process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
+  var fromPath = whichSync(exeName);
   return fromPath || null;
+}
+
+function findFileInTree(dir, fileName, depth) {
+  var entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return null; }
+
+  for (var i = 0; i < entries.length; i++) {
+    if (entries[i].isFile() && entries[i].name.toLowerCase() === fileName.toLowerCase()) {
+      return path.join(dir, entries[i].name);
+    }
+  }
+  if (depth > 0) {
+    for (var d = 0; d < entries.length; d++) {
+      if (!entries[d].isDirectory()) continue;
+      var hit = findFileInTree(path.join(dir, entries[d].name), fileName, depth - 1);
+      if (hit) return hit;
+    }
+  }
+  return null;
 }
 
 function whichSync(binName) {

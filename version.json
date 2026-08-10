@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "notes": "Ilk dagitim surumu: local Whisper transkripsiyon, obek editoru, klasik caption ve animasyonlu MOGRT modu.",
+
+  "_manifestUrl": "Uzaktan guncelleme icin: bu dosyanin GitHub'daki ham (raw) adresini asagiya yaz. Bos birakilirsa panel guncelleme kontrolu yapmaz.",
+  "manifestUrl": "",
+
+  "_setupUrl": "Yeni surumun setup.exe adresi. GitHub Releases kullaniyorsan 'latest' linki sabit kalir, her surumde degistirmen gerekmez.",
+  "setupUrl": ""
+}

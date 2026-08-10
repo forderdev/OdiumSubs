@@ -711,6 +711,84 @@ window.OdiumStudio = (function () {
   }
 
   /* ---------------------------------------------------------------- */
+  /* Uzaktan guncelleme                                                */
+  /* ---------------------------------------------------------------- */
+
+  /* "1.2.10" > "1.2.9" dogru karsilastirilsin diye parca parca bakiyoruz. */
+  function isNewer(remote, local) {
+    var a = String(remote).split(".");
+    var b = String(local).split(".");
+    for (var i = 0; i < Math.max(a.length, b.length); i++) {
+      var x = Number(a[i] || 0);
+      var y = Number(b[i] || 0);
+      if (x > y) return true;
+      if (x < y) return false;
+    }
+    return false;
+  }
+
+  function readLocalVersion() {
+    try {
+      var p = path.join(root, "version.json");
+      if (!fs.existsSync(p)) return null;
+      return JSON.parse(fs.readFileSync(p, "utf8"));
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function fetchJson(url) {
+    return new Promise(function (resolve, reject) {
+      var https = nodeRequire("https");
+      var req = https.get(url, { headers: { "User-Agent": "odium-subs" }, timeout: 8000 }, function (res) {
+        if (res.statusCode !== 200) { res.resume(); reject(new Error("HTTP " + res.statusCode)); return; }
+        var body = "";
+        res.setEncoding("utf8");
+        res.on("data", function (d) { body += d; });
+        res.on("end", function () {
+          try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
+        });
+      });
+      req.on("timeout", function () { req.destroy(new Error("zaman asimi")); });
+      req.on("error", reject);
+    });
+  }
+
+  /*
+    Sessiz calisir: manifest adresi bos ya da internet yoksa hicbir sey
+    gostermez. Guncelleme varsa basliktaki rozet tiklanabilir hale gelir.
+  */
+  function checkUpdate() {
+    var local = readLocalVersion();
+    if (!local || !local.manifestUrl) return;
+
+    fetchJson(local.manifestUrl).then(function (remote) {
+      if (!remote || !remote.version) return;
+      if (!isNewer(remote.version, local.version)) return;
+
+      log("Yeni surum var: v" + remote.version + (remote.notes ? " - " + remote.notes : ""));
+      var pill = $("pill");
+      pill.textContent = "guncelle v" + remote.version;
+      pill.className = "pill update";
+      pill.title = "Indirmek icin tikla";
+      pill.style.cursor = "pointer";
+      pill.onclick = function () {
+        var url = remote.setupUrl || local.setupUrl;
+        if (!url) { log("Kurulum adresi tanimli degil."); return; }
+        try {
+          childProcess.spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" }).unref();
+          log("Tarayicida aciliyor: " + url);
+        } catch (e) {
+          log("Acilamadi: " + e.message);
+        }
+      };
+    }, function (err) {
+      // Internet yoksa kullaniciyi rahatsiz etme, sadece log'a dus.
+      log("Guncelleme kontrolu yapilamadi: " + err.message);
+    });
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Baslat                                                            */
   /* ---------------------------------------------------------------- */
 
@@ -768,7 +846,14 @@ window.OdiumStudio = (function () {
       try { localStorage.setItem("odium.subs.template", tpl.value); } catch (e2) {}
     });
 
+    var local = readLocalVersion();
+    if (local && local.version) {
+      var verEl = document.querySelector(".brand .sub");
+      if (verEl) verEl.textContent = "v" + local.version;
+    }
+
     log("Odium Subs hazir. Kok: " + root);
+    checkUpdate();
   }
 
   if (document.readyState === "loading") {
