@@ -1,319 +1,300 @@
-﻿<meta charset="utf-8">
+<meta charset="utf-8">
 <title>Odium Subs</title>
+
 <link rel="stylesheet" href="css/styles.css">
 
-<div class="wrap">
-  <header class="brand">
-    <div class="mark">ODIUM SUBS</div>
-    <div class="sub">v1.0.0</div>
-    <div class="pill" id="pill">hazir</div>
-  </header>
+<header class="topbar">
+  <span class="brand">ODIUM SUBS</span>
+  <span class="version" id="version">v1.0.0</span>
+  <span class="status" id="pill">hazir</span>
+</header>
 
-  <!-- ============ 1. KAYNAK ============ -->
-  <section class="card">
-    <div class="step"><span class="num">1</span> Kaynak</div>
-    <p class="hint">
-      Timeline'da ya da Project panelinde bir klip sec, sonra oku.
-      Timeline secimi daha kesin - klip zaten yerinde.
-    </p>
-    <button id="btnRead" class="btn">Secimi Oku</button>
+<main class="wrap">
+
+  <!-- ============ 1 KAYNAK ============ -->
+  <section class="block">
+    <h2>Kaynak</h2>
+    <p class="note">Timeline'da veya Project panelinde bir klip sec.</p>
+
+    <button id="btnRead" class="btn">Secimi oku</button>
 
     <div id="sourceBox" class="readout hidden">
-      <div class="kv"><span>Klip</span><b id="srcName">-</b></div>
-      <div class="kv"><span>Dosya</span><b id="srcPath" class="path">-</b></div>
-      <div class="kv"><span>Sequence</span><b id="srcSeq">-</b></div>
-      <div class="kv"><span>Timeline'da</span><b id="srcOcc">-</b></div>
+      <dl>
+        <dt>Klip</dt><dd id="srcName">-</dd>
+        <dt>Sequence</dt><dd id="srcSeq">-</dd>
+        <dt>Timeline'da</dt><dd id="srcOcc">-</dd>
+      </dl>
+      <p class="note path" id="srcPath">-</p>
     </div>
   </section>
 
-  <!-- ============ 2. AYARLAR ============ -->
-  <section class="card">
-    <div class="step"><span class="num">2</span> Ayarlar</div>
+  <!-- ============ 2 TRANSKRIPSIYON ============ -->
+  <section class="block">
+    <h2>Yaziya dokme</h2>
 
-    <div class="row">
-      <div class="col">
-        <label>Mod</label>
-        <select id="optMode">
-          <option value="chunk">Obek (TikTok tarzi)</option>
-          <option value="classic">Klasik altyazi</option>
-        </select>
-      </div>
-      <div class="col">
-        <label>Dil</label>
+    <div class="grid-2">
+      <label class="field">
+        <span>Dil</span>
         <select id="optLanguage">
           <option value="tr">Turkce</option>
           <option value="en">Ingilizce</option>
-          <option value="auto">Otomatik algila</option>
+          <option value="auto">Otomatik</option>
         </select>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="col">
-        <label>Model</label>
+      </label>
+      <label class="field">
+        <span>Kalite</span>
         <select id="optModel">
-          <option value="large-v3-turbo">large-v3-turbo (onerilen)</option>
-          <option value="large-v3">large-v3 (daha yavas)</option>
-          <option value="medium">medium</option>
-          <option value="small">small</option>
-          <option value="tiny">tiny (sadece test)</option>
+          <option value="large-v3-turbo">Yuksek - onerilen</option>
+          <option value="large-v3">En yuksek - yavas</option>
+          <option value="medium">Orta</option>
+          <option value="small">Dusuk - hizli</option>
+          <option value="tiny">Test</option>
         </select>
-      </div>
-      <div class="col">
-        <label>Kapsam</label>
-        <select id="optScope">
-          <option value="all">Klibin tamami</option>
-          <option value="range">Sadece ilk N saniye</option>
-        </select>
-      </div>
+      </label>
     </div>
 
-    <div id="rangeRow" class="row hidden">
-      <div class="col">
-        <label>Baslangic (sn)</label>
+    <label class="field">
+      <span>Ozel kelimeler <em>istege bagli</em></span>
+      <input type="text" id="optPrompt" placeholder="Odium, Kayseri, mid lane" spellcheck="false">
+    </label>
+
+    <label class="field">
+      <span>Kapsam</span>
+      <select id="optScope">
+        <option value="all">Klibin tamami</option>
+        <option value="range">Belirli aralik</option>
+      </select>
+    </label>
+
+    <div class="grid-2 hidden" id="rangeRow">
+      <label class="field">
+        <span>Basla (sn)</span>
         <input type="number" id="optStart" value="0" min="0">
-      </div>
-      <div class="col">
-        <label>Sure (sn)</label>
+      </label>
+      <label class="field">
+        <span>Sure (sn)</span>
         <input type="number" id="optSeconds" value="60" min="5">
-      </div>
+      </label>
     </div>
 
-    <label>Ozel sozluk <span class="mut">- isim ve terimler, virgulle</span></label>
-    <input type="text" id="optPrompt" placeholder="Odium, Kayseri, mid lane" spellcheck="false">
+    <button id="btnTranscribe" class="btn btn-primary" disabled>Once kaynak sec</button>
 
-    <details class="sub-details">
-      <summary>Obek kurallari</summary>
-      <div class="row">
-        <div class="col">
-          <label>Maks kelime</label>
-          <input type="number" id="optMaxWords" value="5" min="1" max="20">
-        </div>
-        <div class="col">
-          <label>Maks sure (sn)</label>
-          <input type="number" id="optMaxDuration" value="2.5" min="0.5" step="0.1">
-        </div>
-      </div>
-      <div class="row">
-        <div class="col">
-          <label>Maks karakter</label>
-          <input type="number" id="optMaxChars" value="32" min="10" max="90">
-        </div>
-        <div class="col">
-          <label>Duraklama kesme (sn)</label>
-          <input type="number" id="optPause" value="0.4" min="0" step="0.05">
-        </div>
-      </div>
-      <div class="row">
-        <div class="col">
-          <label>Min sure (sn)</label>
-          <input type="number" id="optMinDuration" value="0.6" min="0.1" step="0.1">
-        </div>
-        <div class="col">
-          <label>Bosluk birlestir (sn)</label>
-          <input type="number" id="optGapMerge" value="0.3" min="0" step="0.05">
-        </div>
-      </div>
-    </details>
-  </section>
-
-  <!-- ============ 3. YAZIYA DOK ============ -->
-  <section class="card accent">
-    <div class="step"><span class="num">3</span> Yaziya dok</div>
-    <button id="btnTranscribe" class="btn primary" disabled>Once kaynak sec</button>
     <div class="progress hidden" id="progWrap">
-      <div class="progress-bar"><i id="progBar"></i></div>
-      <div class="progress-text" id="progText">&nbsp;</div>
+      <div class="track"><i id="progBar"></i></div>
+      <p class="note" id="progText">&nbsp;</p>
     </div>
   </section>
 
-  <!-- ============ 4. DUZENLE ============ -->
-  <section class="card hidden" id="editorCard">
-    <div class="step"><span class="num">4</span> Duzenle
-      <span class="counter" id="cueCount">0 obek</span>
-    </div>
+  <!-- ============ 3 DUZENLE ============ -->
+  <section class="block hidden" id="editorCard">
+    <h2>Duzenle <span class="count" id="cueCount">0</span></h2>
 
-    <div class="row tools">
+    <div class="findbar">
       <input type="text" id="findText" placeholder="bul" spellcheck="false">
-      <input type="text" id="replaceText" placeholder="degistir" spellcheck="false">
-      <button id="btnReplace" class="btn slim">Tumunu degistir</button>
+      <input type="text" id="replaceText" placeholder="yerine" spellcheck="false">
+      <button id="btnReplace" class="btn btn-small">Degistir</button>
     </div>
 
-    <div class="cue-list" id="cueList"></div>
+    <ol class="cues" id="cueList"></ol>
   </section>
 
-  <!-- ============ 5. TIMELINE ============ -->
-  <section class="card hidden" id="outputCard">
-    <div class="step"><span class="num">5</span> Timeline'a bas</div>
+  <!-- ============ 4 GORUNUM ============ -->
+  <section class="block hidden" id="styleCard">
+    <h2>Gorunum</h2>
 
-    <div class="row">
-      <button id="btnSaveSrt" class="btn">SRT Kaydet</button>
-      <button id="btnImportSrt" class="btn">Caption Track'e Bas</button>
+    <div class="choice" role="radiogroup" aria-label="Altyazi stili">
+      <button class="choice-item is-active" id="styleMogrt" role="radio" aria-checked="true">
+        <strong>Efektli</strong>
+        <span>Animasyonlu, sablonlu</span>
+      </button>
+      <button class="choice-item" id="styleCaption" role="radio" aria-checked="false">
+        <strong>Duz</strong>
+        <span>Premiere altyazisi</span>
+      </button>
     </div>
-    <p class="hint" id="outputHint">
-      Klasik yol: SRT projeye alinir, caption track'e dusurulur. Animasyon yok.
-    </p>
 
-    <details class="sub-details" id="mogrtBlock">
-      <summary>Efektli mod - MOGRT</summary>
+    <div id="mogrtOptions">
+      <label class="field">
+        <span>Sablon</span>
+        <select id="mogrtTemplate"></select>
+      </label>
 
-      <label>Sablon (.mogrt)</label>
-      <input type="text" id="mogrtTemplate" spellcheck="false" placeholder="templates\odium-zoom-pop.mogrt">
+      <div class="grid-2">
+        <label class="field">
+          <span>Font</span>
+          <select id="fontFamily"></select>
+        </label>
+        <label class="field">
+          <span>Stil</span>
+          <select id="fontStyle"></select>
+        </label>
+      </div>
+      <p class="note" id="fontNote">&nbsp;</p>
 
-      <div class="row">
-        <div class="col">
-          <label>Konum</label>
+      <div class="grid-3">
+        <label class="field">
+          <span>Punto</span>
+          <input type="number" id="mogrtFontSize" value="0" min="0" placeholder="0">
+        </label>
+        <label class="field">
+          <span>Konum</span>
           <select id="mogrtPosition">
             <option value="bottom">Alt</option>
-            <option value="top">Ust</option>
             <option value="center">Orta</option>
-            <option value="left">Sol alt</option>
-            <option value="right">Sag alt</option>
-            <option value="">Sablonun kendi konumu</option>
+            <option value="top">Ust</option>
+            <option value="left">Sol</option>
+            <option value="right">Sag</option>
+            <option value="">Sablondaki</option>
           </select>
-        </div>
-        <div class="col">
-          <label>Boyut %</label>
+        </label>
+        <label class="field">
+          <span>Boyut %</span>
           <input type="number" id="mogrtScale" value="100" min="10" max="400">
-        </div>
+        </label>
       </div>
 
-      <div class="row">
-        <div class="col">
-          <label>Font <span class="mut">(bos = sablonunki)</span></label>
-          <input type="text" id="mogrtFont" spellcheck="false" placeholder="Montserrat-Bold">
-        </div>
-        <div class="col">
-          <label>Punto (0 = sablonunki)</label>
-          <input type="number" id="mogrtFontSize" value="0" min="0">
-        </div>
-      </div>
-
-      <label>Track adi</label>
-      <input type="text" id="mogrtTrackName" value="ODIUM SUBS" spellcheck="false">
-
-      <label class="check">
-        <input type="checkbox" id="mogrtClear">
-        Track doluysa once temizle
-      </label>
-      <label class="check">
-        <input type="checkbox" id="mogrtForce">
-        Cok obek olsa da bas (600+)
-      </label>
-
-      <button id="btnPlaceMogrt" class="btn primary">Efektli Bas</button>
-
-      <div class="progress hidden" id="mogrtProgWrap">
-        <div class="progress-bar"><i id="mogrtProgBar"></i></div>
-        <div class="progress-text" id="mogrtProgText">&nbsp;</div>
-      </div>
-
-      <p class="hint" id="mogrtHint">
-        Sablon <b>AE'de yazilmis</b> olmali. Premiere'de yazilan sablonlar
-        Essential Graphics parametresi tasimiyor ve 4 kat yavas basiliyor.
+      <p class="note info">
+        <b>Animasyon hizi sablonda belirlenir.</b>
+        Premiere, MOGRT kliplerinin hizini disaridan degistirmeye izin vermiyor
+        (bes ayri yol denendi, hicbiri tutmadi). Farkli hiz istiyorsan AE'de
+        keyframe araligini degistirip ikinci bir sablon export et - ornegin
+        <code>odium-zoom-pop-hizli.mogrt</code>. Yukaridaki listede cikar.
       </p>
+    </div>
+
+    <details class="more">
+      <summary>Track ve guvenlik</summary>
+      <label class="field">
+        <span>Track adi</span>
+        <input type="text" id="mogrtTrackName" value="ODIUM SUBS" spellcheck="false">
+      </label>
+      <label class="switch">
+        <input type="checkbox" id="mogrtClear">
+        <span>Track doluysa once temizle</span>
+      </label>
+      <label class="switch">
+        <input type="checkbox" id="mogrtForce">
+        <span>600'den fazla obek olsa da bas</span>
+      </label>
     </details>
   </section>
 
-  <pre id="log" class="log"></pre>
+  <!-- ============ 5 BAS ============ -->
+  <section class="block hidden" id="outputCard">
+    <button id="btnApply" class="btn btn-primary btn-big">Timeline'a bas</button>
+    <button id="btnSaveSrt" class="btn btn-ghost">SRT dosyasi kaydet</button>
 
-  <!-- ============ GELISMIS: PROBE'LAR ============ -->
-  <details class="probes">
-    <summary>Gelismis - olcum probe'lari</summary>
+    <div class="progress hidden" id="mogrtProgWrap">
+      <div class="track"><i id="mogrtProgBar"></i></div>
+      <p class="note" id="mogrtProgText">&nbsp;</p>
+    </div>
 
-    <section class="card">
-      <h2>0 &middot; Baglanti</h2>
-      <button id="btnPing" class="btn slim">Host'u Test Et</button>
-    </section>
+    <p class="note" id="outputHint">&nbsp;</p>
+  </section>
 
-    <section class="card">
-      <h2>1 &middot; Secim + occurrence + tick</h2>
-      <button id="btnSelection" class="btn slim">Secimi Oku (probe)</button>
-    </section>
+  <!-- ============ GELISMIS ============ -->
+  <details class="more advanced">
+    <summary>Gelismis</summary>
 
-    <section class="card">
-      <h2>2 &middot; MOGRT parametreleri</h2>
-      <label>MOGRT yolu</label>
-      <input type="text" id="mogrtPath" spellcheck="false">
-      <div class="row">
-        <div class="col"><label>Video track</label><input type="number" id="mogrtTrack" value="0" min="0"></div>
-        <div class="col"><label>Saniye</label><input type="number" id="mogrtAt" value="0" min="0" step="0.5"></div>
+    <div class="block flat">
+      <h2>Obek kurallari</h2>
+      <div class="grid-2">
+        <label class="field"><span>Maks kelime</span><input type="number" id="optMaxWords" value="5" min="1" max="20"></label>
+        <label class="field"><span>Maks sure (sn)</span><input type="number" id="optMaxDuration" value="2.5" min="0.5" step="0.1"></label>
       </div>
-      <button id="btnMogrt" class="btn slim">Parametreleri Dok</button>
-    </section>
-
-    <section class="card">
-      <h2>3 &middot; importMGT hizi</h2>
-      <div class="row">
-        <div class="col"><label>Klip</label><input type="number" id="speedCount" value="25" min="1" max="500"></div>
-        <div class="col"><label>Track</label><input type="number" id="speedTrack" value="0" min="0"></div>
-        <div class="col"><label>Aralik</label><input type="number" id="speedGap" value="2" min="0.5" step="0.5"></div>
+      <div class="grid-2">
+        <label class="field"><span>Maks karakter</span><input type="number" id="optMaxChars" value="32" min="10" max="90"></label>
+        <label class="field"><span>Duraklama (sn)</span><input type="number" id="optPause" value="0.4" min="0" step="0.05"></label>
       </div>
-      <button id="btnSpeed" class="btn slim">Hizi Olc</button>
-    </section>
-
-    <section class="card">
-      <h2>5 &middot; Hizli yol</h2>
-      <div class="row">
-        <div class="col"><label>Klip</label><input type="number" id="fastCount" value="25" min="1" max="500"></div>
-        <div class="col"><label>Track</label><input type="number" id="fastTrack" value="0" min="0"></div>
-        <div class="col"><label>Aralik</label><input type="number" id="fastGap" value="2" min="0.5" step="0.5"></div>
+      <div class="grid-2">
+        <label class="field"><span>Min sure (sn)</span><input type="number" id="optMinDuration" value="0.6" min="0.1" step="0.1"></label>
+        <label class="field"><span>Bosluk birlestir</span><input type="number" id="optGapMerge" value="0.3" min="0" step="0.05"></label>
       </div>
-      <button id="btnFast" class="btn slim">Hizli Yolu Olc</button>
-    </section>
+      <label class="field hidden">
+        <span>Mod</span>
+        <select id="optMode"><option value="chunk">chunk</option><option value="classic">classic</option></select>
+      </label>
+    </div>
 
-    <section class="card">
-      <h2>6 &middot; AE vs Premiere sablonu</h2>
-      <label>Sablon yollari (her satira bir tane)</label>
-      <textarea id="tplPaths" rows="4" spellcheck="false"></textarea>
+    <div class="block flat">
+      <h2>Kayit</h2>
       <div class="row">
-        <div class="col"><label>Import sayisi</label><input type="number" id="tplRuns" value="5" min="1" max="50"></div>
-        <div class="col"><label>Track</label><input type="number" id="tplTrack" value="0" min="0"></div>
+        <button id="btnOpenLogs" class="btn btn-small">Log klasoru</button>
+        <button id="btnClear" class="btn btn-small">Temizle</button>
       </div>
-      <button id="btnTemplates" class="btn slim">Karsilastir</button>
-    </section>
+      <p class="note" id="logDirHint">&nbsp;</p>
+    </div>
 
-    <section class="card">
-      <h2>7 &middot; Klip mekanigi</h2>
-      <label>AE sablonu</label>
-      <input type="text" id="mechPath" spellcheck="false">
-      <div class="row">
-        <div class="col"><label>Track</label><input type="number" id="mechTrack" value="0" min="0"></div>
-        <div class="col"><label>Sure (sn)</label><input type="number" id="mechDur" value="1.4" min="0.2" step="0.2"></div>
+    <details class="more">
+      <summary>Olcum probe'lari</summary>
+
+      <div class="block flat">
+        <button id="btnPing" class="btn btn-small">Host testi</button>
+        <button id="btnSelection" class="btn btn-small">Secim probe</button>
+        <button id="btnQE" class="btn btn-small">QE DOM</button>
+        <input type="text" id="qeTrackName" value="ODIUM SUBS" spellcheck="false">
       </div>
-      <button id="btnMechanics" class="btn slim">Test Et</button>
-    </section>
 
-    <section class="card">
-      <h2>8 &middot; Dogru yazma yolu</h2>
-      <label>AE sablonu</label>
-      <input type="text" id="wrPath" spellcheck="false">
-      <label>Yazilacak metin</label>
-      <input type="text" id="wrText" value="Merhaba dÃ¼nya Ã‡ÄÄ°Ã–ÅÃœ">
-      <div class="row">
-        <div class="col"><label>Font</label><input type="text" id="wrFont" value="" spellcheck="false"></div>
-        <div class="col"><label>Boyut</label><input type="number" id="wrSize" value="0" min="0"></div>
-        <div class="col"><label>Track</label><input type="number" id="wrTrack" value="0" min="0"></div>
+      <div class="block flat">
+        <label class="field"><span>MOGRT yolu</span><input type="text" id="mogrtPath" spellcheck="false"></label>
+        <div class="grid-2">
+          <label class="field"><span>Track</span><input type="number" id="mogrtTrack" value="0" min="0"></label>
+          <label class="field"><span>Saniye</span><input type="number" id="mogrtAt" value="0" min="0" step="0.5"></label>
+        </div>
+        <button id="btnMogrt" class="btn btn-small">Parametreleri dok</button>
       </div>
-      <button id="btnTextWrite" class="btn slim">Test Et</button>
-    </section>
 
-    <section class="card">
-      <h2>4 &middot; QE DOM</h2>
-      <label>Track adi</label>
-      <input type="text" id="qeTrackName" value="ODIUM SUBS" spellcheck="false">
-      <button id="btnQE" class="btn slim">Test Et</button>
-    </section>
-
-    <section class="card">
-      <div class="row">
-        <button id="btnOpenLogs" class="btn slim">Log Klasoru</button>
-        <button id="btnClear" class="btn slim">Log'u Temizle</button>
+      <div class="block flat">
+        <div class="grid-3">
+          <label class="field"><span>Klip</span><input type="number" id="speedCount" value="25" min="1" max="500"></label>
+          <label class="field"><span>Track</span><input type="number" id="speedTrack" value="0" min="0"></label>
+          <label class="field"><span>Aralik</span><input type="number" id="speedGap" value="2" min="0.5" step="0.5"></label>
+        </div>
+        <button id="btnSpeed" class="btn btn-small">Hizi olc</button>
       </div>
-      <p class="hint" id="logDirHint">&nbsp;</p>
-    </section>
+
+      <div class="block flat">
+        <div class="grid-3">
+          <label class="field"><span>Klip</span><input type="number" id="fastCount" value="25" min="1" max="500"></label>
+          <label class="field"><span>Track</span><input type="number" id="fastTrack" value="0" min="0"></label>
+          <label class="field"><span>Aralik</span><input type="number" id="fastGap" value="2" min="0.5" step="0.5"></label>
+        </div>
+        <button id="btnFast" class="btn btn-small">Hizli yolu olc</button>
+      </div>
+
+      <div class="block flat">
+        <label class="field"><span>Sablon yollari</span><textarea id="tplPaths" rows="3" spellcheck="false"></textarea></label>
+        <div class="grid-2">
+          <label class="field"><span>Import</span><input type="number" id="tplRuns" value="5" min="1" max="50"></label>
+          <label class="field"><span>Track</span><input type="number" id="tplTrack" value="0" min="0"></label>
+        </div>
+        <button id="btnTemplates" class="btn btn-small">Karsilastir</button>
+      </div>
+
+      <div class="block flat">
+        <label class="field"><span>AE sablonu</span><input type="text" id="mechPath" spellcheck="false"></label>
+        <div class="grid-2">
+          <label class="field"><span>Track</span><input type="number" id="mechTrack" value="0" min="0"></label>
+          <label class="field"><span>Sure</span><input type="number" id="mechDur" value="1.4" min="0.2" step="0.2"></label>
+        </div>
+        <button id="btnMechanics" class="btn btn-small">Mekanigi test et</button>
+      </div>
+
+      <div class="block flat">
+        <label class="field"><span>AE sablonu</span><input type="text" id="wrPath" spellcheck="false"></label>
+        <label class="field"><span>Metin</span><input type="text" id="wrText" value="Merhaba dünya ÇĞİÖŞÜ"></label>
+        <div class="grid-3">
+          <label class="field"><span>Font</span><input type="text" id="wrFont" spellcheck="false"></label>
+          <label class="field"><span>Punto</span><input type="number" id="wrSize" value="0" min="0"></label>
+          <label class="field"><span>Track</span><input type="number" id="wrTrack" value="0" min="0"></label>
+        </div>
+        <button id="btnTextWrite" class="btn btn-small">Yazmayi test et</button>
+      </div>
+    </details>
   </details>
-</div>
+
+  <pre id="log" class="log" aria-live="polite"></pre>
+</main>
 
 <script src="lib/CSInterface.js"></script>
 <script src="js/premiereBridge.js"></script>

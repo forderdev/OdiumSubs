@@ -1,4 +1,4 @@
-# probe ve calisma ciktilari
+﻿# probe ve calisma ciktilari
 .probe/
 *.log
 
@@ -11,6 +11,9 @@ models/
 # paketleme ciktilari
 dist/
 *.zxp
+
+# gelistirme
+.debug
 
 # gecici
 _CSInterface_source.js

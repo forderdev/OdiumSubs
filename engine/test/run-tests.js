@@ -12,6 +12,7 @@ var srt = require("../srt.js");
 var whisper = require("../whisper.js");
 var audio = require("../audio.js");
 var installer = require("../installer.js");
+var fonts = require("../fonts.js");
 
 var passed = 0;
 var failed = 0;
@@ -349,6 +350,64 @@ console.log("\n=== installer: arsiv acici ===");
   check("arsiv acacak arac var", !!tool, "ne 7-Zip ne tar.exe bulundu");
   if (tool) console.log("       kullanilacak: " + tool.kind + " -> " + tool.path);
   eq("boyut bicimi", installer.formatBytes(1424309000), "1358 MB");
+}
+
+console.log("\n=== fontlar: kurulu font okuma ===");
+{
+  var fontResult = fonts.listFonts();
+  check("font bulundu", fontResult.fonts.length > 20, "gelen " + fontResult.fonts.length);
+  console.log("       " + fontResult.fonts.length + " font, " + fontResult.elapsedMs + " ms");
+
+  var withTurkish = fontResult.fonts.filter(function (f) { return f.turkish; });
+  check("Turkce kapsayan font var", withTurkish.length > 5, "gelen " + withTurkish.length);
+
+  check("her kayit tam", fontResult.fonts.every(function (f) {
+    return f.postScriptName && f.family && typeof f.turkish === "boolean";
+  }));
+
+  /*
+    PostScript adinda bosluk olmamasi kural ama bazi sistem fontlari
+    (ornegin "Microsoft Himalaya") kurali cignediyor. Cogunlugun temiz
+    olmasi yeterli - Premiere bu adi oldugu gibi kabul ediyor.
+  */
+  var spaced = fontResult.fonts.filter(function (f) { return /\s/.test(f.postScriptName); });
+  check("PostScript adlari cogunlukla bosluksuz",
+    spaced.length < fontResult.fonts.length * 0.1,
+    spaced.length + " tanesinde bosluk var");
+
+  var montserrat = fontResult.fonts.filter(function (f) { return f.postScriptName === "Montserrat-Black"; })[0];
+  if (montserrat) {
+    eq("Montserrat-Black Turkce kapsiyor", montserrat.turkish, true);
+  } else {
+    console.log("       (Montserrat-Black kurulu degil, atlandi)");
+  }
+
+  var fredoka = fontResult.fonts.filter(function (f) { return /^FredokaOne/.test(f.postScriptName); })[0];
+  if (fredoka) {
+    eq("Fredoka One Turkce KAPSAMIYOR", fredoka.turkish, false);
+  } else {
+    console.log("       (Fredoka One kurulu degil, atlandi)");
+  }
+
+  var grouped = fonts.groupByFamily(fontResult.fonts);
+  check("aileye gore gruplandi", grouped.length > 0 && grouped.length <= fontResult.fonts.length);
+  check("her ailede en az bir stil", grouped.every(function (g) { return g.styles.length > 0; }));
+}
+
+console.log("\n=== fontlar: onbellek ===");
+{
+  var cachePath = require("path").join(require("os").tmpdir(), "odium-font-cache-test.json");
+  try { require("fs").unlinkSync(cachePath); } catch (e) {}
+
+  var first = fonts.listFontsCached(cachePath);
+  eq("ilk okuma onbelleksiz", first.cached, false);
+
+  var second = fonts.listFontsCached(cachePath);
+  eq("ikinci okuma onbellekten", second.cached, true);
+  eq("ayni font sayisi", second.fonts.length, first.fonts.length);
+  check("onbellek okumasi ani", second.elapsedMs === 0);
+
+  try { require("fs").unlinkSync(cachePath); } catch (e) {}
 }
 
 console.log("\n=== uctan uca: whisper JSON -> obek -> SRT ===");

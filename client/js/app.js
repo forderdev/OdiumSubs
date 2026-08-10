@@ -42,7 +42,7 @@
 
   function setPill(text, kind) {
     el.pill.textContent = text;
-    el.pill.className = "pill" + (kind ? " " + kind : "");
+    el.pill.className = "status" + (kind ? " " + kind : "");
   }
 
   /*
@@ -99,17 +99,18 @@
   /* Butonu calisir/bitti/hata durumlarina sokar. */
   function runProbe(button, label, fn) {
     button.disabled = true;
-    button.className = "btn" + (button.dataset.primary ? " primary" : "");
+    // Temel siniflari koru; sadece sonuc sinifini temizle.
+    button.classList.remove("done", "fail");
     var t0 = Date.now();
     log("--- " + label + " basladi ---");
 
     fn().then(function (res) {
       var ms = Date.now() - t0;
       if (res && res.ok) {
-        button.className += " done";
+        button.classList.add("done");
         log("OK (" + ms + " ms): " + res.message);
       } else {
-        button.className += " fail";
+        button.classList.add("fail");
         log("HATA (" + ms + " ms): " + ((res && res.message) || "bilinmeyen"));
       }
       if (res && res.extra) {
@@ -117,7 +118,7 @@
       }
       button.disabled = false;
     }, function (err) {
-      button.className += " fail";
+      button.classList.add("fail");
       log("BEKLENMEYEN: " + err);
       button.disabled = false;
     });

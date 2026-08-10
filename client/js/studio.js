@@ -3,8 +3,7 @@
   Kaynak sec -> yaziya dok -> obekleri duzelt -> timeline'a bas.
 
   Bu dosya CEP tarafinda; engine/ modullerini Node ile yukluyor.
-  engine/ hicbir sekilde bu dosyaya bagimli degil (mimari karari 6) -
-  bagimlilik tek yonlu: studio.js -> engine/
+  Bagimlilik tek yonlu: studio.js -> engine/ (mimari karari 6).
 */
 window.OdiumStudio = (function () {
   "use strict";
@@ -17,15 +16,17 @@ window.OdiumStudio = (function () {
   var path = nodeRequire ? nodeRequire("path") : null;
   var childProcess = nodeRequire ? nodeRequire("child_process") : null;
 
-  var engine = { pipeline: null, chunker: null, srt: null };
+  var engine = { pipeline: null, chunker: null, srt: null, fonts: null };
   var root = "";
 
   var state = {
-    selection: null,     // PP_getSelection extra'si
-    cues: [],            // duzenlenebilir obekler
-    words: [],           // ham whisper kelimeleri
+    selection: null,
+    cues: [],
+    words: [],
     language: null,
-    busy: false
+    busy: false,
+    style: "mogrt",     // "mogrt" | "caption"
+    fontFamilies: []
   };
 
   var SETTINGS_KEY = "odium.subs.settings";
@@ -65,6 +66,7 @@ window.OdiumStudio = (function () {
     engine.pipeline = nodeRequire(path.join(root, "engine", "pipeline.js"));
     engine.chunker = nodeRequire(path.join(root, "engine", "chunker.js"));
     engine.srt = nodeRequire(path.join(root, "engine", "srt.js"));
+    engine.fonts = nodeRequire(path.join(root, "engine", "fonts.js"));
   }
 
   /* ---------------------------------------------------------------- */
@@ -82,7 +84,7 @@ window.OdiumStudio = (function () {
   function setPill(text, kind) {
     var el = $("pill");
     el.textContent = text;
-    el.className = "pill" + (kind ? " " + kind : "");
+    el.className = "status" + (kind ? " " + kind : "");
   }
 
   function show(id, visible) {
@@ -92,10 +94,10 @@ window.OdiumStudio = (function () {
     else el.classList.add("hidden");
   }
 
-  function setProgress(ratio, text) {
-    show("progWrap", true);
-    $("progBar").style.width = Math.round(Math.max(0, Math.min(1, ratio)) * 100) + "%";
-    $("progText").textContent = text || "";
+  function setProgress(wrapId, barId, textId, ratio, text) {
+    show(wrapId, true);
+    $(barId).style.width = Math.round(Math.max(0, Math.min(1, ratio)) * 100) + "%";
+    $(textId).textContent = text || "";
   }
 
   function timeLabel(seconds) {
@@ -110,13 +112,14 @@ window.OdiumStudio = (function () {
   /* ---------------------------------------------------------------- */
 
   var SETTING_IDS = [
-    "optMode", "optLanguage", "optModel", "optScope", "optStart", "optSeconds",
-    "optPrompt", "optMaxWords", "optMaxDuration", "optMaxChars", "optPause",
-    "optMinDuration", "optGapMerge"
+    "optLanguage", "optModel", "optScope", "optStart", "optSeconds", "optPrompt",
+    "optMaxWords", "optMaxDuration", "optMaxChars", "optPause", "optMinDuration", "optGapMerge",
+    "mogrtTemplate", "fontFamily", "fontStyle", "mogrtFontSize", "mogrtPosition",
+    "mogrtScale", "mogrtTrackName"
   ];
 
   function saveSettings() {
-    var data = {};
+    var data = { style: state.style };
     for (var i = 0; i < SETTING_IDS.length; i++) {
       var el = $(SETTING_IDS[i]);
       if (el) data[SETTING_IDS[i]] = el.value;
@@ -127,17 +130,31 @@ window.OdiumStudio = (function () {
   function loadSettings() {
     var data = null;
     try { data = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch (e) {}
-    if (!data) return;
+    if (!data) return null;
+
     for (var key in data) {
-      if (!data.hasOwnProperty(key)) continue;
+      if (!data.hasOwnProperty(key) || key === "style") continue;
       var el = $(key);
-      if (el) el.value = data[key];
+      if (el && el.tagName !== "SELECT") el.value = data[key];
     }
+    return data;
+  }
+
+  /* Select'ler doldurulduktan SONRA uygulanmali, yoksa deger kaybolur. */
+  function applySavedSelects(data) {
+    if (!data) return;
+    ["mogrtTemplate", "fontFamily", "fontStyle", "optLanguage", "optModel", "optScope", "mogrtPosition"].forEach(function (id) {
+      var el = $(id);
+      if (!el || data[id] === undefined) return;
+      for (var i = 0; i < el.options.length; i++) {
+        if (el.options[i].value === data[id]) { el.value = data[id]; return; }
+      }
+    });
   }
 
   function chunkOptions() {
     return {
-      mode: $("optMode").value,
+      mode: state.style === "caption" ? "classic" : "chunk",
       maxWords: Number($("optMaxWords").value),
       maxDuration: Number($("optMaxDuration").value),
       maxCharsPerLine: Number($("optMaxChars").value),
@@ -145,6 +162,157 @@ window.OdiumStudio = (function () {
       minDuration: Number($("optMinDuration").value),
       gapMerge: Number($("optGapMerge").value)
     };
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Sablon ve font listeleri                                          */
+  /* ---------------------------------------------------------------- */
+
+  function loadTemplates() {
+    var select = $("mogrtTemplate");
+    select.innerHTML = "";
+
+    var dir = path.join(root, "templates");
+    var files = [];
+    try {
+      files = fs.readdirSync(dir).filter(function (f) { return /\.mogrt$/i.test(f); });
+    } catch (e) {}
+
+    if (!files.length) {
+      var empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = "sablon yok - templates klasorune .mogrt koy";
+      select.appendChild(empty);
+      select.disabled = true;
+      return;
+    }
+
+    select.disabled = false;
+    for (var i = 0; i < files.length; i++) {
+      var opt = document.createElement("option");
+      opt.value = path.join(dir, files[i]);
+      opt.textContent = files[i].replace(/\.mogrt$/i, "");
+      select.appendChild(opt);
+    }
+  }
+
+  /*
+    Font listesi diskteki font dosyalarindan okunuyor. Kullanicinin
+    PostScript adini elle yazmasi gerekmesin diye - yanlis yazarsa
+    Premiere sessizce baska fonta duser.
+  */
+  function loadFonts() {
+    var familySelect = $("fontFamily");
+    familySelect.innerHTML = "";
+
+    var cachePath = path.join(root, ".probe", "fonts-cache.json");
+    var result;
+    try {
+      result = engine.fonts.listFontsCached(cachePath);
+    } catch (e) {
+      log("Font listesi okunamadi: " + e.message);
+      return;
+    }
+
+    state.fontFamilies = engine.fonts.groupByFamily(result.fonts);
+    log(result.fonts.length + " font okundu" + (result.cached ? " (onbellek)" : " (" + result.elapsedMs + " ms)"));
+
+    var keep = document.createElement("option");
+    keep.value = "";
+    keep.textContent = "Sablondaki font";
+    familySelect.appendChild(keep);
+
+    for (var i = 0; i < state.fontFamilies.length; i++) {
+      var group = state.fontFamilies[i];
+      var opt = document.createElement("option");
+      opt.value = group.family;
+      // Turkce gliflerini tasimayan fontlar isaretli - secilirse yazi bozulur.
+      opt.textContent = group.turkish ? group.family : group.family + "  (Turkce yok)";
+      familySelect.appendChild(opt);
+    }
+
+    refreshFontStyles();
+  }
+
+  function refreshFontStyles() {
+    var family = $("fontFamily").value;
+    var styleSelect = $("fontStyle");
+    styleSelect.innerHTML = "";
+
+    if (!family) {
+      var none = document.createElement("option");
+      none.value = "";
+      none.textContent = "-";
+      styleSelect.appendChild(none);
+      styleSelect.disabled = true;
+      updateFontNote();
+      return;
+    }
+
+    styleSelect.disabled = false;
+    var group = null;
+    for (var i = 0; i < state.fontFamilies.length; i++) {
+      if (state.fontFamilies[i].family === family) { group = state.fontFamilies[i]; break; }
+    }
+    if (!group) return;
+
+    for (var s = 0; s < group.styles.length; s++) {
+      var opt = document.createElement("option");
+      opt.value = group.styles[s].postScriptName;
+      opt.textContent = group.styles[s].subfamily;
+      styleSelect.appendChild(opt);
+    }
+
+    updateFontNote();
+  }
+
+  function updateFontNote() {
+    var note = $("fontNote");
+    var family = $("fontFamily").value;
+
+    if (!family) {
+      note.textContent = "Sablonun kendi fontu kullanilir.";
+      note.style.color = "";
+      return;
+    }
+
+    var group = null;
+    for (var i = 0; i < state.fontFamilies.length; i++) {
+      if (state.fontFamilies[i].family === family) { group = state.fontFamilies[i]; break; }
+    }
+
+    var ps = $("fontStyle").value || "-";
+    if (group && !group.turkish) {
+      note.textContent = "Bu font Turkce harfleri (C G I S) tasimiyor, yazi bozulur.";
+      note.style.color = "var(--warn)";
+    } else {
+      note.textContent = ps;
+      note.style.color = "";
+    }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Stil secimi                                                       */
+  /* ---------------------------------------------------------------- */
+
+  function setStyle(style) {
+    state.style = style;
+
+    var mogrtBtn = $("styleMogrt");
+    var captionBtn = $("styleCaption");
+
+    mogrtBtn.classList.toggle("is-active", style === "mogrt");
+    captionBtn.classList.toggle("is-active", style === "caption");
+    mogrtBtn.setAttribute("aria-checked", style === "mogrt" ? "true" : "false");
+    captionBtn.setAttribute("aria-checked", style === "caption" ? "true" : "false");
+
+    show("mogrtOptions", style === "mogrt");
+
+    $("outputHint").textContent = (style === "mogrt")
+      ? "Sablon kliplerini ODIUM SUBS track'ine basar."
+      : "SRT'yi projeye alir ve Premiere'in caption track'ine dusurur.";
+
+    saveSettings();
   }
 
   /* ---------------------------------------------------------------- */
@@ -166,21 +334,19 @@ window.OdiumStudio = (function () {
       state.selection = extra;
 
       $("srcName").textContent = extra.item.name || "-";
-      $("srcPath").textContent = extra.item.mediaPath || "<dosya yolu yok>";
-      $("srcSeq").textContent = extra.sequence ? extra.sequence.name : "<sequence yok>";
+      $("srcPath").textContent = extra.item.mediaPath || "dosya yolu yok";
+      $("srcSeq").textContent = extra.sequence ? extra.sequence.name : "sequence yok";
 
-      var occText = extra.occurrenceCount + " kullanim";
-      if (extra.occurrenceCount === 0) {
-        occText += " - klip timeline'da yok, sadece SRT uretilir";
-      }
-      $("srcOcc").textContent = occText;
+      $("srcOcc").textContent = extra.occurrenceCount === 0
+        ? "kullanilmiyor - sadece SRT uretilir"
+        : extra.occurrenceCount + " yerde";
 
       show("sourceBox", true);
-      setPill(extra.source === "timeline" ? "timeline secimi" : "project secimi", "ok");
+      setPill(extra.source === "timeline" ? "timeline" : "project", "ok");
       log(res.message);
 
       if (!extra.item.mediaPath) {
-        log("UYARI: bu item'in disk yolu yok (sequence ya da sentetik klip olabilir).");
+        log("UYARI: bu ogenin disk yolu yok (sequence ya da sentetik klip olabilir).");
       }
 
       updateTranscribeButton();
@@ -191,11 +357,11 @@ window.OdiumStudio = (function () {
     var btn = $("btnTranscribe");
     var ready = !!(state.selection && state.selection.item && state.selection.item.mediaPath);
     btn.disabled = !ready || state.busy;
-    btn.textContent = ready ? "Yaziya Dok" : "Once kaynak sec";
+    btn.textContent = ready ? "Yaziya dok" : "Once kaynak sec";
   }
 
   /* ---------------------------------------------------------------- */
-  /* 3. Transkripsiyon                                                 */
+  /* 2. Transkripsiyon                                                 */
   /* ---------------------------------------------------------------- */
 
   function transcribe() {
@@ -206,8 +372,8 @@ window.OdiumStudio = (function () {
 
     state.busy = true;
     updateTranscribeButton();
-    setPill("calisiyor", "");
-    setProgress(0, "hazirlaniyor");
+    setPill("calisiyor", "busy");
+    setProgress("progWrap", "progBar", "progText", 0, "hazirlaniyor");
 
     var workDir = path.join(root, ".probe", "work");
     var toolsDir = path.join(root, "tools");
@@ -238,11 +404,13 @@ window.OdiumStudio = (function () {
       chunkOptions: chunkOptions(),
 
       onLog: function (line) {
-        if (/^\s*\d{1,3}%/.test(line)) return;   // ilerleme cubugu satirlari log'u sismesin
+        if (/^\s*\d{1,3}%/.test(line)) return;
         log(line);
       },
-      onPhase: function (phase, ratio, message) {
-        setProgress(overallRatio(phase, ratio), phaseWeights[phase].label + " " + Math.round(ratio * 100) + "%");
+      onPhase: function (phase, ratio) {
+        setProgress("progWrap", "progBar", "progText",
+          overallRatio(phase, ratio),
+          phaseWeights[phase].label + " %" + Math.round(ratio * 100));
       }
     }).then(function (result) {
       state.words = result.words;
@@ -250,19 +418,18 @@ window.OdiumStudio = (function () {
       state.language = result.language;
       state.busy = false;
 
-      setProgress(1, "bitti");
+      setProgress("progWrap", "progBar", "progText", 1, "bitti");
       setPill(result.cues.length + " obek", "ok");
       log("Bitti: " + result.words.length + " kelime, " + result.cues.length + " obek, dil " + result.language);
-      log("Sureler: ses " + result.timings.extract + " ms, whisper " + result.timings.transcribe + " ms");
 
       renderCues();
       show("editorCard", true);
+      show("styleCard", true);
       show("outputCard", true);
       updateTranscribeButton();
     }, function (err) {
       state.busy = false;
       setPill("hata", "err");
-      setProgress(0, "");
       show("progWrap", false);
       log("HATA: " + err.message);
       updateTranscribeButton();
@@ -270,7 +437,7 @@ window.OdiumStudio = (function () {
   }
 
   /* ---------------------------------------------------------------- */
-  /* 4. Obek editoru                                                   */
+  /* 3. Obek editoru                                                   */
   /* ---------------------------------------------------------------- */
 
   function renderCues() {
@@ -284,47 +451,44 @@ window.OdiumStudio = (function () {
   }
 
   function cueRow(cue, index) {
-    var row = document.createElement("div");
+    var row = document.createElement("li");
     row.className = "cue";
 
     var head = document.createElement("div");
     head.className = "cue-head";
 
-    var num = document.createElement("span");
-    num.className = "cue-num";
-    num.textContent = (index + 1);
-
     var time = document.createElement("span");
     time.className = "cue-time";
     time.textContent = timeLabel(cue.start) + " - " + timeLabel(cue.end)
-      + "  (" + (cue.end - cue.start).toFixed(2) + " sn)";
+      + "  " + (cue.end - cue.start).toFixed(2) + " sn";
 
     var actions = document.createElement("span");
     actions.className = "cue-actions";
 
-    actions.appendChild(iconButton("bol", "Imlecin oldugu yerden bol", function () {
+    var textArea = document.createElement("textarea");
+
+    actions.appendChild(miniButton("bol", "Imlecin oldugu yerden bol", function () {
       splitCue(index, textArea.selectionStart);
     }));
-    actions.appendChild(iconButton("birlestir", "Sonraki obekle birlestir", function () {
+    actions.appendChild(miniButton("birlestir", "Sonraki obekle birlestir", function () {
       mergeCue(index);
     }));
-    actions.appendChild(iconButton("sil", "Bu obegi sil", function () {
+    actions.appendChild(miniButton("sil", "Bu obegi sil", function () {
       deleteCue(index);
     }));
 
-    head.appendChild(num);
     head.appendChild(time);
     head.appendChild(actions);
 
-    var textArea = document.createElement("textarea");
     textArea.className = "cue-text";
     textArea.rows = 1;
     textArea.value = cue.text;
     textArea.spellcheck = false;
+    textArea.setAttribute("aria-label", "Obek " + (index + 1) + " metni");
     textArea.addEventListener("input", function () {
       cue.text = textArea.value;
       cue.lines = engine.chunker.wrapLines(cue.text,
-        Number($("optMaxChars").value), Number($("optMode").value === "classic" ? 2 : 1));
+        Number($("optMaxChars").value), state.style === "caption" ? 2 : 1);
       autoGrow(textArea);
     });
 
@@ -339,9 +503,10 @@ window.OdiumStudio = (function () {
     el.style.height = (el.scrollHeight + 2) + "px";
   }
 
-  function iconButton(label, title, onClick) {
+  function miniButton(label, title, onClick) {
     var b = document.createElement("button");
     b.className = "mini";
+    b.type = "button";
     b.textContent = label;
     b.title = title;
     b.addEventListener("click", onClick);
@@ -350,7 +515,7 @@ window.OdiumStudio = (function () {
 
   /*
     Imlec konumundan boler. Kelime zamanlari elimizde oldugu icin bolme
-    noktasi gercek zamana oturuyor - ortadan ikiye bolup tahmin etmiyoruz.
+    noktasi gercek zamana oturuyor - ortadan bolup tahmin etmiyoruz.
   */
   function splitCue(index, caret) {
     var cue = state.cues[index];
@@ -359,7 +524,6 @@ window.OdiumStudio = (function () {
       return;
     }
 
-    // Imlecin hangi kelimeden sonra oldugunu bul.
     var cursor = 0;
     var splitAt = 1;
     for (var i = 0; i < cue.words.length; i++) {
@@ -370,13 +534,10 @@ window.OdiumStudio = (function () {
     if (splitAt <= 0) splitAt = 1;
     if (splitAt >= cue.words.length) splitAt = cue.words.length - 1;
 
-    var left = cue.words.slice(0, splitAt);
-    var right = cue.words.slice(splitAt);
+    state.cues.splice(index, 1,
+      makeCue(cue.words.slice(0, splitAt)),
+      makeCue(cue.words.slice(splitAt)));
 
-    var a = makeCue(left);
-    var b = makeCue(right);
-
-    state.cues.splice(index, 1, a, b);
     reindex();
     renderCues();
     log("Obek " + (index + 1) + " bolundu.");
@@ -391,12 +552,11 @@ window.OdiumStudio = (function () {
     var b = state.cues[index + 1];
 
     var merged = makeCue((a.words || []).concat(b.words || []));
-    // Elle duzenlenmis metin varsa koru.
     merged.text = (a.text + " " + b.text).replace(/\s+/g, " ");
     merged.start = a.start;
     merged.end = b.end;
     merged.lines = engine.chunker.wrapLines(merged.text,
-      Number($("optMaxChars").value), $("optMode").value === "classic" ? 2 : 1);
+      Number($("optMaxChars").value), state.style === "caption" ? 2 : 1);
 
     state.cues.splice(index, 2, merged);
     reindex();
@@ -412,9 +572,9 @@ window.OdiumStudio = (function () {
   }
 
   function makeCue(words) {
-    var text = [];
-    for (var i = 0; i < words.length; i++) text.push(words[i].word);
-    var joined = text.join(" ");
+    var parts = [];
+    for (var i = 0; i < words.length; i++) parts.push(words[i].word);
+    var joined = parts.join(" ");
     return {
       index: 0,
       start: words.length ? words[0].start : 0,
@@ -422,7 +582,7 @@ window.OdiumStudio = (function () {
       text: joined,
       words: words,
       lines: engine.chunker.wrapLines(joined,
-        Number($("optMaxChars").value), $("optMode").value === "classic" ? 2 : 1),
+        Number($("optMaxChars").value), state.style === "caption" ? 2 : 1),
       breakReason: "manual"
     };
   }
@@ -444,7 +604,7 @@ window.OdiumStudio = (function () {
       count += parts.length - 1;
       cue.text = parts.join(replace);
       cue.lines = engine.chunker.wrapLines(cue.text,
-        Number($("optMaxChars").value), $("optMode").value === "classic" ? 2 : 1);
+        Number($("optMaxChars").value), state.style === "caption" ? 2 : 1);
     }
 
     renderCues();
@@ -452,11 +612,10 @@ window.OdiumStudio = (function () {
   }
 
   /* ---------------------------------------------------------------- */
-  /* 5. Cikti                                                          */
+  /* 4. Cikti                                                          */
   /* ---------------------------------------------------------------- */
 
   function srtOffset() {
-    // Sequence 0'dan baslamiyorsa SRT'yi kaydirmazsak altyazilar hic gorunmez.
     if (state.selection && state.selection.sequence) {
       return Number(state.selection.sequence.zeroPointSeconds) || 0;
     }
@@ -484,8 +643,7 @@ window.OdiumStudio = (function () {
   function buildSrt() {
     var mapped = cuesForSequence();
     if (mapped && mapped.length) {
-      log("Sequence zamanina cevrildi: " + mapped.length + " obek ("
-        + state.selection.occurrenceCount + " kullanim).");
+      log("Sequence zamanina cevrildi: " + mapped.length + " obek.");
       return engine.srt.toSrt(mapped, { offsetSeconds: srtOffset() });
     }
     log("Klip timeline'da bulunamadi - kaynak zamanlariyla SRT uretiliyor.");
@@ -502,11 +660,7 @@ window.OdiumStudio = (function () {
     return path.join(outDir, base + ".srt");
   }
 
-  /*
-    reveal=true sadece kullanici "SRT Kaydet"e bastiginda. "Premiere'e Al"
-    da ayni dosyayi yaziyor ama orada Explorer acmak Premiere'in onunu
-    kapatiyor ve akisi bolduruyor.
-  */
+  /* reveal sadece kullanici acikca SRT kaydettiginde - akisi bolmesin. */
   function saveSrt(reveal) {
     try {
       var target = srtPath();
@@ -526,27 +680,26 @@ window.OdiumStudio = (function () {
     var target = saveSrt(false);
     if (!target) return;
 
+    setPill("aliniyor", "busy");
     PremiereBridge.importCaptions({
       srtPath: target,
       logPath: path.join(root, ".probe", "import-captions.txt")
     }).then(function (res) {
       log((res.ok ? "" : "HATA: ") + res.message);
+      setPill(res.ok ? "basildi" : "hata", res.ok ? "ok" : "err");
       if (res.ok && res.extra && !res.extra.trackCreated) {
         $("outputHint").textContent =
           "SRT projeye alindi ama caption track otomatik olusmadi. "
-          + "Project panelinden timeline'a surukle. Ayrinti .probe/import-captions.txt icinde.";
+          + "Project panelinden timeline'a surukle.";
       }
     });
   }
 
   /* ---------------------------------------------------------------- */
-  /* 5b. Efektli mod - MOGRT                                           */
+  /* 5. Efektli mod - MOGRT                                            */
   /* ---------------------------------------------------------------- */
 
-  /*
-    Konum onayarlari. Motion Position normalize [x, y]: 0,0 sol ust; 1,1 sag alt.
-    Sablonun kendi konumu korunacaksa null doner.
-  */
+  /* Motion Position normalize [x, y]: 0,0 sol ust; 1,1 sag alt. */
   var POSITIONS = {
     bottom: [0.5, 0.82],
     top: [0.5, 0.18],
@@ -556,67 +709,64 @@ window.OdiumStudio = (function () {
   };
 
   /*
-    Tek evalScript'te 1400 klip basmak Premiere'i dakikalarca kilitler ve
-    ilerleme gosterilemez. Paket paket gonderiyoruz.
-    M0 olcumu: AE sablonu ~97 ms/klip -> 40'lik paket ~4 sn.
+    Tek evalScript'te yuzlerce klip basmak Premiere'i dakikalarca kilitler
+    ve ilerleme gosterilemez. Paket paket gonderiyoruz.
   */
   var BATCH_SIZE = 40;
   var WARN_THRESHOLD = 600;
 
-  function setMogrtProgress(ratio, text) {
-    show("mogrtProgWrap", true);
-    $("mogrtProgBar").style.width = Math.round(Math.max(0, Math.min(1, ratio)) * 100) + "%";
-    $("mogrtProgText").textContent = text || "";
-  }
-
   function placeMogrt() {
     if (state.busy) return;
 
-    var template = $("mogrtTemplate").value.replace(/^\s+|\s+$/g, "");
-    if (!template) { log("Sablon yolu bos."); return; }
+    var template = $("mogrtTemplate").value;
+    if (!template) {
+      log("Sablon secilmedi. templates klasorune bir .mogrt koy.");
+      setPill("sablon yok", "err");
+      return;
+    }
     if (!fs.existsSync(template)) {
-      // Depoya gore goreli yol da kabul edilsin.
-      var relative = path.join(root, template);
-      if (fs.existsSync(relative)) {
-        template = relative;
-      } else {
-        log("Sablon bulunamadi: " + template);
-        return;
-      }
+      log("Sablon bulunamadi: " + template);
+      return;
     }
 
     var cues = cuesForSequence();
     if (!cues || !cues.length) {
       log("Klip timeline'da bulunamadi - efektli mod sequence konumu gerektiriyor.");
+      setPill("timeline'da yok", "err");
       return;
     }
 
     /*
-      window.confirm KULLANMA. CEP paneli icinde acilan native onay diyalogu
-      bu ortamda govdesi olmayan bir cubuk olarak ciziliyor ve JS thread'ini
-      kilitliyor - panel tamamen donuyor. Onay panel icindeki kutucuklardan
-      aliniyor, kullanici karari onceden veriyor.
+      window.confirm KULLANMA. CEP panelinde acilan native onay diyalogu bu
+      ortamda govdesi olmayan bir cubuk olarak ciziliyor ve JS thread'ini
+      kilitliyor. Onay panel icindeki kutucuklardan aliniyor.
     */
     if (cues.length > WARN_THRESHOLD && !$("mogrtForce").checked) {
-      var estimate = Math.round(cues.length * 0.1);
-      log(cues.length + " obek var, tahmini " + estimate + " sn surer ve Premiere o sure mesgul olur.");
-      log("Devam etmek icin \"Cok obek olsa da bas\" kutucugunu isaretle, "
-        + "ya da timeline'da In/Out koyup tekrar yaziya dok.");
+      log(cues.length + " obek var, tahmini " + Math.round(cues.length * 0.4) + " sn surer.");
+      log("Devam icin Gelismis > \"600'den fazla obek olsa da bas\" kutucugunu isaretle.");
+      setPill("cok obek", "err");
       return;
     }
 
     var trackName = $("mogrtTrackName").value || "ODIUM SUBS";
     var positionKey = $("mogrtPosition").value;
     var position = positionKey ? POSITIONS[positionKey] : null;
-    var scale = Number($("mogrtScale").value) || 0;
-    var font = $("mogrtFont").value.replace(/^\s+|\s+$/g, "");
-    var fontSize = Number($("mogrtFontSize").value) || 0;
     var logPath = path.join(root, ".probe", "place-mogrt.txt");
+
+    var payloadBase = {
+      mogrtPath: template,
+      font: $("fontStyle").value || "",
+      fontSize: Number($("mogrtFontSize").value) || 0,
+      position: position,
+      scale: Number($("mogrtScale").value) || 0,
+      logPath: logPath
+    };
 
     state.busy = true;
     updateTranscribeButton();
-    $("btnPlaceMogrt").disabled = true;
-    setMogrtProgress(0, "track hazirlaniyor");
+    $("btnApply").disabled = true;
+    setPill("basiliyor", "busy");
+    setProgress("mogrtProgWrap", "mogrtProgBar", "mogrtProgText", 0, "track hazirlaniyor");
 
     PremiereBridge.ensureSubtitleTrack({
       trackName: trackName,
@@ -624,31 +774,25 @@ window.OdiumStudio = (function () {
       logPath: logPath
     }).then(function (res) {
       if (!res.ok) throw new Error(res.message);
-
-      var trackIndex = res.extra.trackIndex;
       log(res.message);
 
-      // Track doluysa kullanicinin isini sessizce silme (karar 11).
-      // Karar onceden kutucukla veriliyor; native onay diyalogu paneli kilitliyor.
       if (res.extra.existing > 0) {
         if (!$("mogrtClear").checked) {
           throw new Error(
             "\"" + trackName + "\" track'inde " + res.extra.existing + " klip var. "
-            + "\"Track doluysa once temizle\" kutucugunu isaretle ya da baska bir track adi ver."
+            + "Gelismis > \"Track doluysa once temizle\" kutucugunu isaretle "
+            + "ya da baska bir track adi ver."
           );
         }
         return PremiereBridge.ensureSubtitleTrack({
-          trackName: trackName,
-          clear: true,
-          logPath: logPath
+          trackName: trackName, clear: true, logPath: logPath
         }).then(function (res2) {
           if (!res2.ok) throw new Error(res2.message);
           log("Temizlendi: " + res2.extra.cleared + " klip");
           return res2.extra.trackIndex;
         });
       }
-
-      return trackIndex;
+      return res.extra.trackIndex;
     }).then(function (trackIndex) {
       var total = cues.length;
       var placed = 0;
@@ -659,13 +803,15 @@ window.OdiumStudio = (function () {
       function nextBatch() {
         if (offset >= total) {
           var seconds = Math.round((Date.now() - started) / 1000);
-          setMogrtProgress(1, "bitti - " + placed + " klip, " + seconds + " sn");
+          setProgress("mogrtProgWrap", "mogrtProgBar", "mogrtProgText", 1,
+            placed + " klip, " + seconds + " sn");
+          setPill("basildi", "ok");
           log("Efektli basma bitti: " + placed + " klip"
             + (failed ? ", " + failed + " basarisiz" : "")
             + " (" + seconds + " sn, klip basi "
             + Math.round((Date.now() - started) / Math.max(1, placed)) + " ms)");
           state.busy = false;
-          $("btnPlaceMogrt").disabled = false;
+          $("btnApply").disabled = false;
           updateTranscribeButton();
           return;
         }
@@ -675,16 +821,12 @@ window.OdiumStudio = (function () {
           slice.push({ start: cues[i].start, end: cues[i].end, text: cues[i].text });
         }
 
-        return PremiereBridge.placeSubtitles({
-          mogrtPath: template,
-          trackIndex: trackIndex,
-          cues: slice,
-          font: font,
-          fontSize: fontSize,
-          position: position,
-          scale: scale,
-          logPath: logPath
-        }).then(function (res) {
+        var payload = {};
+        for (var k in payloadBase) if (payloadBase.hasOwnProperty(k)) payload[k] = payloadBase[k];
+        payload.trackIndex = trackIndex;
+        payload.cues = slice;
+
+        return PremiereBridge.placeSubtitles(payload).then(function (res) {
           if (!res.ok) throw new Error(res.message);
 
           placed += res.extra.placed;
@@ -693,8 +835,8 @@ window.OdiumStudio = (function () {
 
           if (res.extra.firstError) log("uyari: " + res.extra.firstError);
 
-          setMogrtProgress(offset / total, placed + " / " + total + " klip");
-          // Bir sonraki pakete gecmeden once UI'nin nefes almasi icin.
+          setProgress("mogrtProgWrap", "mogrtProgBar", "mogrtProgText",
+            offset / total, placed + " / " + total + " klip");
           setTimeout(nextBatch, 30);
         });
       }
@@ -702,12 +844,17 @@ window.OdiumStudio = (function () {
       nextBatch();
     }).catch(function (err) {
       state.busy = false;
-      $("btnPlaceMogrt").disabled = false;
+      $("btnApply").disabled = false;
       updateTranscribeButton();
-      setMogrtProgress(0, "");
       show("mogrtProgWrap", false);
+      setPill("hata", "err");
       log("HATA: " + err.message);
     });
+  }
+
+  function applyToTimeline() {
+    if (state.style === "caption") importSrt();
+    else placeMogrt();
   }
 
   /* ---------------------------------------------------------------- */
@@ -754,10 +901,7 @@ window.OdiumStudio = (function () {
     });
   }
 
-  /*
-    Sessiz calisir: manifest adresi bos ya da internet yoksa hicbir sey
-    gostermez. Guncelleme varsa basliktaki rozet tiklanabilir hale gelir.
-  */
+  /* Manifest adresi bos ya da internet yoksa sessiz gecer. */
   function checkUpdate() {
     var local = readLocalVersion();
     if (!local || !local.manifestUrl) return;
@@ -769,9 +913,8 @@ window.OdiumStudio = (function () {
       log("Yeni surum var: v" + remote.version + (remote.notes ? " - " + remote.notes : ""));
       var pill = $("pill");
       pill.textContent = "guncelle v" + remote.version;
-      pill.className = "pill update";
+      pill.className = "status update";
       pill.title = "Indirmek icin tikla";
-      pill.style.cursor = "pointer";
       pill.onclick = function () {
         var url = remote.setupUrl || local.setupUrl;
         if (!url) { log("Kurulum adresi tanimli degil."); return; }
@@ -783,7 +926,6 @@ window.OdiumStudio = (function () {
         }
       };
     }, function (err) {
-      // Internet yoksa kullaniciyi rahatsiz etme, sadece log'a dus.
       log("Guncelleme kontrolu yapilamadi: " + err.message);
     });
   }
@@ -801,7 +943,12 @@ window.OdiumStudio = (function () {
       return;
     }
 
-    loadSettings();
+    var saved = loadSettings();
+
+    loadTemplates();
+    loadFonts();
+    applySavedSelects(saved);
+    refreshFontStyles();
 
     for (var i = 0; i < SETTING_IDS.length; i++) {
       var el = $(SETTING_IDS[i]);
@@ -813,46 +960,28 @@ window.OdiumStudio = (function () {
     });
     show("rangeRow", $("optScope").value === "range");
 
-    $("optMode").addEventListener("change", function () {
-      // Klasik modda karakter siniri ve kelime siniri farkli.
-      if (this.value === "classic") {
-        $("optMaxChars").value = 42;
-        $("optMaxWords").value = 0;
-        $("optMaxDuration").value = 6;
-        $("optMinDuration").value = 1;
-      } else {
-        $("optMaxChars").value = 32;
-        $("optMaxWords").value = 5;
-        $("optMaxDuration").value = 2.5;
-        $("optMinDuration").value = 0.6;
-      }
+    $("fontFamily").addEventListener("change", function () {
+      refreshFontStyles();
       saveSettings();
     });
+    $("fontStyle").addEventListener("change", updateFontNote);
+
+    $("styleMogrt").addEventListener("click", function () { setStyle("mogrt"); });
+    $("styleCaption").addEventListener("click", function () { setStyle("caption"); });
+    setStyle(saved && saved.style ? saved.style : "mogrt");
 
     $("btnRead").addEventListener("click", readSelection);
     $("btnTranscribe").addEventListener("click", transcribe);
     $("btnReplace").addEventListener("click", replaceAll);
+    $("btnApply").addEventListener("click", applyToTimeline);
     $("btnSaveSrt").addEventListener("click", function () { saveSrt(true); });
-    $("btnImportSrt").addEventListener("click", importSrt);
-    $("btnPlaceMogrt").addEventListener("click", placeMogrt);
 
-    // Sablon yolu da hatirlansin.
-    var tpl = $("mogrtTemplate");
-    try {
-      var saved = localStorage.getItem("odium.subs.template");
-      if (saved) tpl.value = saved;
-    } catch (e) {}
-    tpl.addEventListener("change", function () {
-      try { localStorage.setItem("odium.subs.template", tpl.value); } catch (e2) {}
-    });
-
-    var local = readLocalVersion();
-    if (local && local.version) {
-      var verEl = document.querySelector(".brand .sub");
-      if (verEl) verEl.textContent = "v" + local.version;
+    var localVersion = readLocalVersion();
+    if (localVersion && localVersion.version) {
+      $("version").textContent = "v" + localVersion.version;
     }
 
-    log("Odium Subs hazir. Kok: " + root);
+    log("Odium Subs hazir.");
     checkUpdate();
   }
 

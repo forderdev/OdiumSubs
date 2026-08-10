@@ -653,6 +653,72 @@ function PP_writeTextParam(param, text, font, fontSize) {
 }
 
 /*
+  Animasyon hizi - CALISMIYOR, olculdu.
+
+  Premiere MOGRT kliplerini zaman olarak esnetmeye izin vermiyor. QE DOM'da
+  bes ayri yol denendi, hicbiri klibin hizini degistirmedi:
+    setSpeed(yuzde, "", false, false, false) -> hata yok, deger 1 kaldi
+    setSpeed(oran,  "", false, false, false) -> hata yok, deger 1 kaldi
+    setSpeed(yuzde) / setSpeed(oran)         -> "Not Enough Parameters"
+    item.speed = oran                        -> deger 1 kaldi
+
+  Bu yuzden panelde hiz kontrolu yok; animasyon hizi sablonun kendi
+  keyframe'lerinden geliyor. Farkli hiz isteyen ikinci bir sablon export
+  ediyor. Fonksiyon ileride Adobe bu tarafi acarsa diye duruyor.
+*/
+function PP_applyClipSpeed(trackIndex, itemIndex, percent) {
+  try {
+    app.enableQE();
+    var qseq = qe.project.getActiveSequence();
+    if (!qseq) return "qe sequence yok";
+
+    var qtrack = qseq.getVideoTrackAt(trackIndex);
+    if (!qtrack) return "qe track yok";
+    if (itemIndex < 0 || itemIndex >= qtrack.numItems) return "index disarida";
+
+    var item = qtrack.getItemAt(itemIndex);
+    if (!item) return "qe klip yok";
+
+    var before = "?";
+    try { before = String(item.speed); } catch (e1) {}
+
+    /*
+      Ilk deneme setSpeed(oran, "", false, false, false) hata vermeden
+      degeri degistirmedi (oncesi=1 sonrasi=1). Imza belirsiz oldugu icin
+      varyantlari sirayla deneyip ilk TUTAN'i kullaniyoruz - "hata firlatmadi"
+      yeterli degil, deger gercekten degismis olmali.
+    */
+    var ratio = percent / 100;
+    var attempts = [
+      { label: "setSpeed(yuzde,5arg)", run: function () { item.setSpeed(percent, "", false, false, false); } },
+      { label: "setSpeed(oran,5arg)", run: function () { item.setSpeed(ratio, "", false, false, false); } },
+      { label: "setSpeed(yuzde)", run: function () { item.setSpeed(percent); } },
+      { label: "setSpeed(oran)", run: function () { item.setSpeed(ratio); } },
+      { label: "speed=oran", run: function () { item.speed = ratio; } }
+    ];
+
+    var report = [];
+    for (var a = 0; a < attempts.length; a++) {
+      var threw = "";
+      try { attempts[a].run(); } catch (eA) { threw = String(eA); }
+
+      var now = "?";
+      try { now = String(item.speed); } catch (eB) {}
+
+      report.push(attempts[a].label + " -> " + now + (threw ? " (" + threw + ")" : ""));
+
+      if (String(now) !== String(before)) {
+        return "TUTAN: " + attempts[a].label + " | oncesi=" + before + " sonrasi=" + now;
+      }
+    }
+
+    return "hicbiri tutmadi | oncesi=" + before + " | " + report.join(" ; ");
+  } catch (e) {
+    return "HATA: " + e;
+  }
+}
+
+/*
   Klibin Motion efektinden konum ve boyut. Sablondan bagimsiz calisir (karar 9b).
   Yazdiktan sonra geri okur: ilk gercek testte istenen [0.5,0.82] yerine
   ekranda 960/98 cikti, yani yazilan deger ile olusan deger ayni degil.
@@ -727,6 +793,7 @@ function PP_placeSubtitles(payloadJson) {
     var fontSize = payload.fontSize ? Number(payload.fontSize) : 0;
     var position = payload.position || null;
     var scale = payload.scale ? Number(payload.scale) : 0;
+    var speedPercent = payload.speedPercent ? Number(payload.speedPercent) : 100;
 
     var placed = 0;
     var failed = 0;
@@ -746,6 +813,17 @@ function PP_placeSubtitles(payloadJson) {
       if (!clip) {
         failed++;
         continue;
+      }
+
+      /*
+        Hiz SUREDEN ONCE: setSpeed klibin uzunlugunu degistiriyor,
+        sonra sureyi obege gore sabitliyoruz.
+      */
+      if (speedPercent && speedPercent !== 100) {
+        var itemIndex = -1;
+        try { itemIndex = seq.videoTracks[trackIndex].clips.numItems - 1; } catch (eIdx) {}
+        var speedReport = PP_applyClipSpeed(trackIndex, itemIndex, speedPercent);
+        if (i === 0) logger.add("Hiz %" + speedPercent + ": " + speedReport);
       }
 
       /* Sure: sablonun varsayilan uzunlugu obege cekiliyor. */

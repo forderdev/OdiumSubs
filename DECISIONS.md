@@ -222,6 +222,52 @@ yeniden export et, ya panelde font alanını hep dolu tut.
    (basma sonrası normal durum) kullanıcı Project panelinden başka klip seçse bile
    timeline seçimi öne geçiyordu. `PP_getSelection` artık `isMGT()` olan klipleri atlıyor.
 
+## Arayüz yenilemesi ve font seçici (2026-08-10)
+
+**Font seçici gerçek font listesinden.** `engine/fonts.js` kurulu font dosyalarını
+(`C:\Windows\Fonts` + kullanıcı klasörü) doğrudan okuyor: sfnt/TTC `name` tablosundan
+aile, alt aile ve **PostScript adı**, `cmap`'ten Türkçe glif kapsaması (Ç Ğ İ Ş ı ğ ş ç).
+
+- 416 font, **208'i Türkçe'yi tam kapsıyor**
+- İlk okuma ~1.3 sn (konsol) / 327 ms (panel, sıcak dosya önbelleği) → sonuç diske
+  önbelleklenip font klasörünün değişme tarihiyle doğrulanıyor, sonraki açılışlar anında
+- Kapsamayan fontlar listede `(Turkce yok)` diye işaretli — seçilirse yazı bozulur
+- Kullanıcı artık PostScript adını elle yazmıyor; "Montserrat" yazıp seçiyor,
+  panel `Montserrat-Black` değerini kendisi gönderiyor
+
+**Animasyon hızı slider'ı YAPILAMADI — ölçüldü.** Premiere, MOGRT kliplerini zaman
+olarak esnetmeye izin vermiyor. QE DOM'da beş yol denendi, hiçbiri klibin hızını
+değiştirmedi (`item.speed` hep `1` kaldı):
+
+| Deneme | Sonuç |
+|---|---|
+| `setSpeed(yüzde, "", false, false, false)` | hata yok, değer değişmedi |
+| `setSpeed(oran, "", false, false, false)` | hata yok, değer değişmedi |
+| `setSpeed(yüzde)` / `setSpeed(oran)` | `Not Enough Parameters` |
+| `item.speed = oran` | değer değişmedi |
+
+Slider kaldırıldı; sahte kontrol bırakmak yanıltıcı olurdu. Yerine panelde açıklama var:
+hız şablonun keyframe'lerinden gelir, farklı hız için ikinci bir şablon export edilir
+(`odium-zoom-pop-hizli.mogrt`). Şablon listesi zaten `templates/` klasörünü okuduğu için
+varyantlar kendiliğinden görünür.
+
+### Dağıtımı üç saat kaybettiren hata
+
+Kurulum paketinin **kaldırma testi `PlayerDebugMode`'u sildi** (`.iss` içinde
+`uninsdeletevalue` bayrağı vardı). O andan itibaren CEP imzasız uzantı için HTML
+motorunu hiç başlatmadı: panel çerçevesi açılıyor, içerik boş, log'da hiçbir hata yok.
+
+Teşhisi zorlaştıran şey: `CEPHtmlEngine` süreçleri arasında bizim uzantımıza ait bir
+süreç olup olmadığına bakmak sorunu tek adımda gösterdi — panel çerçevesinin açılması
+uzantının yüklendiği anlamına gelmiyor.
+
+`.iss` düzeltildi: **`PlayerDebugMode` asla silinmiyor.** Bu ayar makine genelinde;
+kaldırma sırasında silinirse aynı makinedeki diğer imzasız CEP panelleri de açılmaz olur.
+
+Ayrıca: sürüm numarasını PowerShell ile değiştirirken `manifest.xml`'e **UTF-8 BOM**
+eklendi, `<?xml` öncesi BOM manifesti geçersiz kılıyor. Kaynak dosyaları PowerShell
+`Set-Content` ile düzenlemekten kaçınılmalı.
+
 ## Açık bilinmeyenler (M0 bunları ölçüyor)
 
 1. `importMGT` klip başına ms → animasyonlu modun eşiği
