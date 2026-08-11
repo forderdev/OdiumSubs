@@ -292,6 +292,42 @@ Panelde renk seçici: `<input type="color">` + 6 hazır renk + "uygula" kutucuğ
 Şablon renk parametresi taşımıyorsa log'a "renk parametresi yok, atlandı" düşer,
 basma işlemi bozulmaz.
 
+## Nest desteği (2026-08-11)
+
+**Sorun:** nest'lenmiş klip seçilince `clip.projectItem` bir **sequence** dönüyor,
+medya dosyası değil. `getMediaPath()` boş, panel "dosya yolu yok" deyip kalıyordu.
+
+**Çözüm iki parçalı:**
+
+1. `PP_sequenceForItem` — bir project item'ın sequence olup olmadığını
+   `app.project.sequences` içinde nodeId eşleyerek anlıyor.
+2. `PP_walkOccurrences` — sequence ağacında yürüyor, nest'lerin içine iniyor
+   (derinlik sınırı 3) ve her kullanımı **dış sequence koordinatlarına** çeviriyor.
+
+Zaman çevrimi iki kademe:
+
+```
+medya zamanı m  ->  iç sequence:  n = innerStart + (m - innerIn)
+iç sequence n   ->  dış sequence: o = nestStart  + (n - nestIn)
+```
+
+Yürüyüşte iki şey taşınıyor: `shift` (bu sequence zamanına eklenince dış zamanı verir)
+ve `win` (bu sequence zamanında gerçekten görünen aralık — nest kırpılmışsa dışarıda
+kalan kısım sayılmamalı). Çıktı normal occurrence ile aynı biçimde
+(`start`, `inPoint`, `outPoint`), böylece `chunker.mapToSequence` **değişmeden** çalışıyor.
+
+Nest birden fazla kaynak içerebilir; `PP_dominantSourceInSequence` süreye göre en çok
+yer kaplayanı seçiyor ve panel kaç kaynak bulunduğunu yazıyor.
+
+**Gerçek Premiere'de doğrulandı:**
+
+| Adım | Sonuç |
+|---|---|
+| Nest seçimi | `andre.mp4` bulundu, "Nested Sequence 01 nest'i içinden seçildi" |
+| Basma | 111 klip, ekranda doğru zamanda |
+| Nest 99.167 sn sağa kaydırıldı | SRT: öbek 1 `0:04.88` → `00:01:44,047` |
+| Kayma tutarlılığı | Öbek 2 de tam 99.167 sn kaymış |
+
 ## Açık bilinmeyenler (M0 bunları ölçüyor)
 
 1. `importMGT` klip başına ms → animasyonlu modun eşiği

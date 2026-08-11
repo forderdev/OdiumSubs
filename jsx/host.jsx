@@ -284,24 +284,153 @@ function PP_timelineSelection(seq) {
   return items;
 }
 
-/* Verilen nodeId'ye ait tum video klipleri bulur. */
-function PP_findOccurrences(seq, nodeId) {
-  var parts = [];
-  if (!seq || !nodeId) return parts;
+/*
+  Bir project item bir sequence mi? Nest klipleri bunu tasiyor.
+  Sequence ise Sequence nesnesini doner, degilse null.
+*/
+function PP_sequenceForItem(item) {
+  if (!item) return null;
+  var id = "";
+  try { id = String(item.nodeId); } catch (e0) { return null; }
+  if (!id) return null;
+
+  try {
+    for (var s = 0; s < app.project.sequences.numSequences; s++) {
+      var seq = app.project.sequences[s];
+      var sid = "";
+      try { sid = String(seq.projectItem.nodeId); } catch (e1) { continue; }
+      if (sid === id) return seq;
+    }
+  } catch (e) {}
+  return null;
+}
+
+/*
+  Nest icindeki gercek medyayi bulur.
+  Doner: { item, seconds } - nest icinde en cok yer kaplayan kaynak.
+
+  Neden "en cok yer kaplayan": bir nest birden fazla kaynak icerebilir,
+  ama konusma genelde tek uzun kayittan gelir. Birden fazla kaynak varsa
+  cagiran taraf kullaniciyi uyariyor.
+*/
+function PP_dominantSourceInSequence(seq, depth, tally) {
+  tally = tally || {};
+  if (!seq || depth > 3) return tally;
 
   try {
     for (var t = 0; t < seq.videoTracks.numTracks; t++) {
       var track = seq.videoTracks[t];
       for (var c = 0; c < track.clips.numItems; c++) {
         var clip = track.clips[c];
-        var id = null;
-        try { id = clip.projectItem ? String(clip.projectItem.nodeId) : null; } catch (e1) { continue; }
-        if (id !== nodeId) continue;
-        parts.push(PP_occurrenceJson(clip, t));
+        var item = null;
+        try { item = clip.projectItem; } catch (e1) { continue; }
+        if (!item) continue;
+
+        var inner = PP_sequenceForItem(item);
+        if (inner) {
+          PP_dominantSourceInSequence(inner, depth + 1, tally);
+          continue;
+        }
+
+        var mediaPath = "";
+        try { mediaPath = String(item.getMediaPath()); } catch (e2) {}
+        if (!mediaPath) continue;
+
+        var id = "";
+        try { id = String(item.nodeId); } catch (e3) { continue; }
+
+        var dur = 0;
+        try { dur = PP_seconds(clip.end) - PP_seconds(clip.start); } catch (e4) {}
+        if (!dur || dur < 0) dur = 0;
+
+        if (!tally[id]) tally[id] = { item: item, seconds: 0 };
+        tally[id].seconds += dur;
       }
     }
   } catch (e) {}
 
+  return tally;
+}
+
+/*
+  Verilen nodeId'ye ait TUM kullanimlari bulur - nest'lerin icine inerek.
+
+  Zaman iki kademe cevriliyor:
+    medya zamani m -> ic sequence zamani  n = innerStart + (m - innerIn)
+    ic sequence n  -> dis sequence zamani o = nestStart + (n - nestIn)
+
+  Yurumede tasidigimiz iki sey:
+    shift    : bu sequence'in zamanina eklenince dis sequence zamani verir
+    win      : bu sequence'in zamaninda gercekten gorunen aralik
+               (nest kirpilmissa disarida kalan kisim sayilmamali)
+
+  Cikti normal occurrence ile ayni bicimde: { start, inPoint, outPoint }.
+  Boylece chunker.mapToSequence hicbir degisiklik olmadan calisiyor.
+*/
+function PP_walkOccurrences(seq, targetNodeId, shift, winStart, winEnd, depth, trackIndex, out) {
+  if (!seq || depth > 3) return;
+
+  try {
+    for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+      var track = seq.videoTracks[t];
+
+      for (var c = 0; c < track.clips.numItems; c++) {
+        var clip = track.clips[c];
+
+        var cStart = PP_seconds(clip.start);
+        var cEnd = PP_seconds(clip.end);
+        var cIn = PP_seconds(clip.inPoint);
+        if (cStart === null || cEnd === null || cIn === null) continue;
+
+        /* Bu klibin gercekten gorunen parcasi */
+        var visStart = Math.max(cStart, winStart);
+        var visEnd = Math.min(cEnd, winEnd);
+        if (visEnd <= visStart) continue;
+
+        var item = null;
+        try { item = clip.projectItem; } catch (e1) { continue; }
+        if (!item) continue;
+
+        var nested = PP_sequenceForItem(item);
+        if (nested) {
+          /* Nest: ic sequence zamanina gec, pencereyi ve kaymayi guncelle */
+          var innerShift = shift + cStart - cIn;
+          var innerWinStart = cIn + (visStart - cStart);
+          var innerWinEnd = cIn + (visEnd - cStart);
+          PP_walkOccurrences(nested, targetNodeId, innerShift,
+            innerWinStart, innerWinEnd, depth + 1,
+            (depth === 0 ? t : trackIndex), out);
+          continue;
+        }
+
+        var id = "";
+        try { id = String(item.nodeId); } catch (e2) { continue; }
+        if (id !== targetNodeId) continue;
+
+        /* Gorunen parcanin medya zamanindaki karsiligi */
+        var mediaIn = cIn + (visStart - cStart);
+        var mediaOut = cIn + (visEnd - cStart);
+
+        out.push("{" + '"trackIndex":' + (depth === 0 ? t : trackIndex)
+          + ',"name":' + PP_jsonString((function () {
+              try { return clip.name; } catch (e3) { return ""; }
+            })())
+          + ',"start":' + (visStart + shift)
+          + ',"end":' + (visEnd + shift)
+          + ',"inPoint":' + mediaIn
+          + ',"outPoint":' + mediaOut
+          + ',"nested":' + (depth > 0 ? "true" : "false")
+          + ',"depth":' + depth + "}");
+      }
+    }
+  } catch (e) {}
+}
+
+/* Verilen nodeId'ye ait tum video klipleri bulur (nest'ler dahil). */
+function PP_findOccurrences(seq, nodeId) {
+  var parts = [];
+  if (!seq || !nodeId) return parts;
+  PP_walkOccurrences(seq, nodeId, 0, 0, 1e9, 0, 0, parts);
   return parts;
 }
 
@@ -370,6 +499,40 @@ function PP_getSelection() {
       return PP_result(false, "Secim yok. Project panelinden bir klip sec ya da timeline'da bir klibe tikla.");
     }
 
+    /*
+      NEST DESTEGI
+      Secilen klip nest ise projectItem bir SEQUENCE'tir; getMediaPath() bos
+      doner ve panel "dosya yolu yok" deyip kalir. Bu durumda nest'in icine
+      inip gercek medyayi buluyoruz. Zaman cevrimi PP_walkOccurrences'ta.
+    */
+    var nestInfo = "null";
+    var nestedSeq = PP_sequenceForItem(projectItem);
+    if (nestedSeq) {
+      var tally = PP_dominantSourceInSequence(nestedSeq, 0, {});
+
+      var best = null;
+      var sourceCount = 0;
+      for (var key in tally) {
+        if (!tally.hasOwnProperty(key)) continue;
+        sourceCount++;
+        if (!best || tally[key].seconds > best.seconds) best = tally[key];
+      }
+
+      if (!best) {
+        return PP_result(false,
+          "\"" + projectItem.name + "\" bir nest ama icinde medya dosyasi bulunamadi.");
+      }
+
+      var nestName = "";
+      try { nestName = String(projectItem.name); } catch (eN) {}
+
+      nestInfo = "{" + '"nestName":' + PP_jsonString(nestName)
+        + ',"sourceCount":' + sourceCount
+        + ',"pickedSeconds":' + Math.round(best.seconds * 100) / 100 + "}";
+
+      projectItem = best.item;
+    }
+
     var nodeId = "";
     try { nodeId = String(projectItem.nodeId); } catch (e4) {}
 
@@ -395,11 +558,15 @@ function PP_getSelection() {
       + ',"item":' + PP_projectItemJson(projectItem)
       + ',"sequence":' + seqJson
       + ',"selectedOccurrence":' + (selectedOccurrence || "null")
+      + ',"nest":' + nestInfo
       + ',"occurrences":[' + occurrences.join(",") + "]"
       + ',"occurrenceCount":' + occurrences.length + "}";
 
     var message = (source === "timeline" ? "Timeline" : "Project paneli") + " secimi okundu, "
       + occurrences.length + " kullanim bulundu.";
+    if (nestedSeq) {
+      message = "Nest icindeki kaynak bulundu: " + occurrences.length + " kullanim.";
+    }
 
     return PP_result(true, message, extra);
   } catch (e) {

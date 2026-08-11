@@ -341,6 +341,25 @@ window.OdiumStudio = (function () {
         ? "kullanilmiyor - sadece SRT uretilir"
         : extra.occurrenceCount + " yerde";
 
+      /*
+        Nest secildiginde projectItem bir sequence oluyor; host icine inip
+        gercek medyayi buluyor. Kullanici hangi dosyanin secildigini gormeli,
+        yoksa "ben nest sectim, bu dosya nereden cikti" der.
+      */
+      if (extra.nest) {
+        var nestNote = "\"" + extra.nest.nestName + "\" nest'i icinden secildi";
+        if (extra.nest.sourceCount > 1) {
+          nestNote += " - nest'te " + extra.nest.sourceCount + " ayri kaynak var, "
+            + "en uzunu (" + extra.nest.pickedSeconds + " sn) kullaniliyor";
+          setPill("nest: " + extra.nest.sourceCount + " kaynak", "busy");
+        }
+        log(nestNote);
+        $("srcNest").textContent = nestNote;
+        show("srcNestRow", true);
+      } else {
+        show("srcNestRow", false);
+      }
+
       show("sourceBox", true);
       setPill(extra.source === "timeline" ? "timeline" : "project", "ok");
       log(res.message);

@@ -147,6 +147,13 @@ h2 {
   text-wrap: pretty;
 }
 
+.note.nest {
+  margin-top: 7px;
+  padding-left: 8px;
+  border-left: 2px solid var(--accent);
+  color: var(--text);
+}
+
 .note.path {
   font-family: Consolas, "Cascadia Mono", monospace;
   font-size: 10px;
