@@ -346,9 +346,29 @@ console.log("\n=== installer: surum secimi ===");
 
 console.log("\n=== installer: arsiv acici ===");
 {
+  var tools = installer.findExtractors();
+  check("arsiv acacak arac var", tools.length > 0, "hicbir acici bulunamadi");
+  for (var ti = 0; ti < tools.length; ti++) {
+    console.log("       aday " + (ti + 1) + ": " + tools[ti].kind + " -> " + tools[ti].path);
+  }
+
+  /* tar en sonda olmali: bsdtar bu 7z'leri acamiyor, once gercek acicilar denenmeli. */
+  var tarIndex = -1;
+  for (var tj = 0; tj < tools.length; tj++) if (tools[tj].kind === "tar") tarIndex = tj;
+  check("tar en son sirada", tarIndex === -1 || tarIndex === tools.length - 1,
+    "tar " + tarIndex + ". sirada, toplam " + tools.length);
+
+  var seen = {};
+  var dupe = false;
+  for (var tk = 0; tk < tools.length; tk++) {
+    var key = tools[tk].path.toLowerCase();
+    if (seen[key]) dupe = true;
+    seen[key] = true;
+  }
+  check("ayni exe iki kez listelenmedi", !dupe, "yinelenen yol var");
+
   var tool = installer.findExtractor();
-  check("arsiv acacak arac var", !!tool, "ne 7-Zip ne tar.exe bulundu");
-  if (tool) console.log("       kullanilacak: " + tool.kind + " -> " + tool.path);
+  check("ilk aday donuyor", !tool || tool.path === tools[0].path, "ilk aday eslemedi");
   eq("boyut bicimi", installer.formatBytes(1424309000), "1358 MB");
 }
 

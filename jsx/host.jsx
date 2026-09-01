@@ -306,6 +306,21 @@ function PP_sequenceForItem(item) {
 }
 
 /*
+  Sequence'in gezilecek track gruplari.
+
+  Ses ayri taraniyor: video parcasi timeline'da olmayan klipler (ses dosyasi,
+  videosu silinmis kayit, sadece A1'e atilmis voiceover) yalnizca audio
+  track'te duruyor. Yalnizca videoTracks taranirken bunlar "kullanilmiyor"
+  sayiliyor, efektli mod da sequence konumu bulamadigi icin duruyordu.
+*/
+function PP_trackGroups(seq) {
+  var groups = [];
+  try { if (seq.videoTracks) groups.push({ tracks: seq.videoTracks, audio: false }); } catch (e1) {}
+  try { if (seq.audioTracks) groups.push({ tracks: seq.audioTracks, audio: true }); } catch (e2) {}
+  return groups;
+}
+
+/*
   Nest icindeki gercek medyayi bulur.
   Doner: { item, seconds } - nest icinde en cok yer kaplayan kaynak.
 
@@ -317,11 +332,26 @@ function PP_dominantSourceInSequence(seq, depth, tally) {
   tally = tally || {};
   if (!seq || depth > 3) return tally;
 
-  try {
-    for (var t = 0; t < seq.videoTracks.numTracks; t++) {
-      var track = seq.videoTracks[t];
-      for (var c = 0; c < track.clips.numItems; c++) {
-        var clip = track.clips[c];
+  var groups = PP_trackGroups(seq);
+
+  for (var g = 0; g < groups.length; g++) {
+    var numTracks = 0;
+    try { numTracks = groups[g].tracks.numTracks; } catch (eT) { continue; }
+    var slot = groups[g].audio ? "audio" : "video";
+
+    for (var t = 0; t < numTracks; t++) {
+      var track = null;
+      var numClips = 0;
+      try {
+        track = groups[g].tracks[t];
+        numClips = track.clips.numItems;
+      } catch (eC) { continue; }
+
+      for (var c = 0; c < numClips; c++) {
+        var clip = null;
+        try { clip = track.clips[c]; } catch (eK) { continue; }
+        if (!clip) continue;
+
         var item = null;
         try { item = clip.projectItem; } catch (e1) { continue; }
         if (!item) continue;
@@ -343,11 +373,17 @@ function PP_dominantSourceInSequence(seq, depth, tally) {
         try { dur = PP_seconds(clip.end) - PP_seconds(clip.start); } catch (e4) {}
         if (!dur || dur < 0) dur = 0;
 
-        if (!tally[id]) tally[id] = { item: item, seconds: 0 };
-        tally[id].seconds += dur;
+        if (!tally[id]) tally[id] = { item: item, seconds: 0, video: 0, audio: 0 };
+        tally[id][slot] += dur;
+
+        /*
+          A/V bagli klip hem video hem audio track'te duruyor; sureleri
+          toplamak o kaynagi iki kat uzun gosterirdi. Buyuk olan sayiliyor.
+        */
+        tally[id].seconds = Math.max(tally[id].video, tally[id].audio);
       }
     }
-  } catch (e) {}
+  }
 
   return tally;
 }
@@ -367,15 +403,28 @@ function PP_dominantSourceInSequence(seq, depth, tally) {
   Cikti normal occurrence ile ayni bicimde: { start, inPoint, outPoint }.
   Boylece chunker.mapToSequence hicbir degisiklik olmadan calisiyor.
 */
-function PP_walkOccurrences(seq, targetNodeId, shift, winStart, winEnd, depth, trackIndex, out) {
+function PP_walkOccurrences(seq, targetNodeId, shift, winStart, winEnd, depth, trackIndex, out, isAudio) {
   if (!seq || depth > 3) return;
 
-  try {
-    for (var t = 0; t < seq.videoTracks.numTracks; t++) {
-      var track = seq.videoTracks[t];
+  var groups = PP_trackGroups(seq);
 
-      for (var c = 0; c < track.clips.numItems; c++) {
-        var clip = track.clips[c];
+  for (var g = 0; g < groups.length; g++) {
+    var groupAudio = isAudio || groups[g].audio;
+    var numTracks = 0;
+    try { numTracks = groups[g].tracks.numTracks; } catch (eT) { continue; }
+
+    for (var t = 0; t < numTracks; t++) {
+      var track = null;
+      var numClips = 0;
+      try {
+        track = groups[g].tracks[t];
+        numClips = track.clips.numItems;
+      } catch (eC) { continue; }
+
+      for (var c = 0; c < numClips; c++) {
+        var clip = null;
+        try { clip = track.clips[c]; } catch (eK) { continue; }
+        if (!clip) continue;
 
         var cStart = PP_seconds(clip.start);
         var cEnd = PP_seconds(clip.end);
@@ -399,7 +448,7 @@ function PP_walkOccurrences(seq, targetNodeId, shift, winStart, winEnd, depth, t
           var innerWinEnd = cIn + (visEnd - cStart);
           PP_walkOccurrences(nested, targetNodeId, innerShift,
             innerWinStart, innerWinEnd, depth + 1,
-            (depth === 0 ? t : trackIndex), out);
+            (depth === 0 ? t : trackIndex), out, groupAudio);
           continue;
         }
 
@@ -411,26 +460,74 @@ function PP_walkOccurrences(seq, targetNodeId, shift, winStart, winEnd, depth, t
         var mediaIn = cIn + (visStart - cStart);
         var mediaOut = cIn + (visEnd - cStart);
 
-        out.push("{" + '"trackIndex":' + (depth === 0 ? t : trackIndex)
-          + ',"name":' + PP_jsonString((function () {
-              try { return clip.name; } catch (e3) { return ""; }
-            })())
-          + ',"start":' + (visStart + shift)
-          + ',"end":' + (visEnd + shift)
-          + ',"inPoint":' + mediaIn
-          + ',"outPoint":' + mediaOut
-          + ',"nested":' + (depth > 0 ? "true" : "false")
-          + ',"depth":' + depth + "}");
+        var clipName = "";
+        try { clipName = clip.name; } catch (e3) {}
+
+        out.push({
+          trackIndex: (depth === 0 ? t : trackIndex),
+          name: clipName,
+          start: visStart + shift,
+          end: visEnd + shift,
+          inPoint: mediaIn,
+          outPoint: mediaOut,
+          nested: depth > 0,
+          audio: !!groupAudio,
+          depth: depth
+        });
       }
     }
-  } catch (e) {}
+  }
 }
 
-/* Verilen nodeId'ye ait tum video klipleri bulur (nest'ler dahil). */
+function PP_occurrenceObjJson(o) {
+  return "{" + '"trackIndex":' + o.trackIndex
+    + ',"name":' + PP_jsonString(o.name)
+    + ',"start":' + o.start
+    + ',"end":' + o.end
+    + ',"inPoint":' + o.inPoint
+    + ',"outPoint":' + o.outPoint
+    + ',"nested":' + (o.nested ? "true" : "false")
+    + ',"audio":' + (o.audio ? "true" : "false")
+    + ',"depth":' + o.depth + "}";
+}
+
+/*
+  Iki kayit ayni klibin iki parcasi mi? Ayni medya-sequence kaymasi
+  (start - inPoint) ve zamanda ortusme varsa evet. A/V bagli klip hem video
+  hem audio track'te goruldugu icin bu eleme sart; yoksa her obek iki kez
+  basilirdi. Ayni kaynagin timeline'da baska yerdeki kullanimi farkli kayma
+  tasidigi icin elenmez.
+*/
+function PP_sameMapping(a, b) {
+  if (Math.abs((a.start - a.inPoint) - (b.start - b.inPoint)) > 0.01) return false;
+  return Math.min(a.end, b.end) - Math.max(a.start, b.start) > 0.001;
+}
+
+/* Verilen nodeId'ye ait tum klipleri bulur - video, ses ve nest'ler dahil. */
 function PP_findOccurrences(seq, nodeId) {
   var parts = [];
   if (!seq || !nodeId) return parts;
-  PP_walkOccurrences(seq, nodeId, 0, 0, 1e9, 0, 0, parts);
+
+  var found = [];
+  PP_walkOccurrences(seq, nodeId, 0, 0, 1e9, 0, 0, found, false);
+
+  /* Video kayitlari once degerlendiriliyor; kopya elenirken o kalsin. */
+  var ordered = [];
+  for (var v = 0; v < found.length; v++) if (!found[v].audio) ordered.push(found[v]);
+  for (var a = 0; a < found.length; a++) if (found[a].audio) ordered.push(found[a]);
+
+  var kept = [];
+  for (var i = 0; i < ordered.length; i++) {
+    var dup = false;
+    for (var k = 0; k < kept.length; k++) {
+      if (PP_sameMapping(ordered[i], kept[k])) { dup = true; break; }
+    }
+    if (!dup) kept.push(ordered[i]);
+  }
+
+  kept.sort(function (x, y) { return x.start - y.start; });
+
+  for (var q = 0; q < kept.length; q++) parts.push(PP_occurrenceObjJson(kept[q]));
   return parts;
 }
 

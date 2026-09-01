@@ -10,8 +10,11 @@
   API'ye ulasilamazsa bilinen son surume duser. Boylece yeni surum ciktiginda
   kod degistirmeye gerek kalmaz.
 
-  Acma: 7-Zip her makinede yok. Windows 10+ ile gelen tar.exe (bsdtar/libarchive)
-  7z okuyabiliyor; once o denenir, sonra varsa 7z.exe.
+  Acma: 7-Zip her makinede yok. Sirayla denenen zincir:
+    7z ailesi (7-Zip / winget / NanaZip / PeaZip / Bandizip / PATH) -> WinRAR
+    -> Windows'un tar.exe'si -> son care 7zr.exe'yi resmi siteden indirmek.
+  tar.exe en sona alindi: bsdtar bu arsivlerin BCJ2 filtresini cozemiyor ve
+  "sadece 7-Zip kabul ediyor" gorunumu bundan cikiyordu.
 */
 "use strict";
 
@@ -187,37 +190,88 @@ function download(url, destPath, onProgress, redirectsLeft) {
 /* Acma                                                                 */
 /* ------------------------------------------------------------------ */
 
-function findExtractor() {
-  var candidates = [
-    path.join(process.env.ProgramFiles || "", "7-Zip", "7z.exe"),
-    path.join(process.env["ProgramFiles(x86)"] || "", "7-Zip", "7z.exe")
-  ];
-  for (var i = 0; i < candidates.length; i++) {
-    if (candidates[i] && fs.existsSync(candidates[i])) {
-      return { kind: "7z", path: candidates[i] };
-    }
-  }
+var SEVEN_ZR = {
+  url: "https://www.7-zip.org/a/7zr.exe",
+  minBytes: 200 * 1024
+};
 
-  var tarPath = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe");
-  if (fs.existsSync(tarPath)) return { kind: "tar", path: tarPath };
-
-  return null;
+function addIfFile(list, kind, filePath) {
+  if (!filePath) return;
+  try { if (fs.existsSync(filePath)) list.push({ kind: kind, path: filePath }); } catch (e) {}
 }
 
-function extractArchive(archivePath, destDir, onLog) {
-  var tool = findExtractor();
-  if (!tool) {
-    return Promise.reject(new Error(
-      "Arsiv acacak arac yok. 7-Zip kur ya da arsivi elle ac: " + archivePath
-    ));
+/*
+  Acici adaylari, tercih sirasiyla. tar.exe en sonda: Windows ile birlikte
+  geliyor ama Faster-Whisper arsivlerinin filtresini cozemedigi icin cogu
+  makinede kod 1 ile dusuyordu.
+*/
+function findExtractors(toolsDir) {
+  var found = [];
+
+  var bases = [
+    process.env.ProgramFiles || "",
+    process.env["ProgramFiles(x86)"] || "",
+    process.env.ProgramW6432 || "",
+    path.join(process.env.LOCALAPPDATA || "", "Programs")
+  ];
+
+  /* Daha once indirdiysek once onu kullan. */
+  if (toolsDir) addIfFile(found, "7z", path.join(toolsDir, "7zr.exe"));
+
+  for (var b = 0; b < bases.length; b++) {
+    var base = bases[b];
+    if (!base) continue;
+    addIfFile(found, "7z", path.join(base, "7-Zip", "7z.exe"));
+    addIfFile(found, "7z", path.join(base, "NanaZip", "NanaZipC.exe"));
+    addIfFile(found, "7z", path.join(base, "NanaZip", "NanaZip.exe"));
+    addIfFile(found, "7z", path.join(base, "PeaZip", "res", "bin", "7z", "7z.exe"));
+    addIfFile(found, "7z", path.join(base, "PeaZip", "res", "7z", "7z.exe"));
+    addIfFile(found, "bandizip", path.join(base, "Bandizip", "bz.exe"));
+    addIfFile(found, "winrar", path.join(base, "WinRAR", "WinRAR.exe"));
   }
 
-  if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+  /* winget ile kurulan 7-Zip buraya shim birakiyor. */
+  addIfFile(found, "7z", path.join(process.env.LOCALAPPDATA || "",
+    "Microsoft", "WinGet", "Links", "7z.exe"));
 
-  var args = (tool.kind === "7z")
-    ? ["x", archivePath, "-o" + destDir, "-y"]
-    : ["-xf", archivePath, "-C", destDir];
+  /* PATH'te duran tasinabilir surumler. */
+  var dirs = String(process.env.PATH || process.env.Path || "").split(";");
+  var names = ["7z.exe", "7za.exe", "7zr.exe"];
+  for (var d = 0; d < dirs.length; d++) {
+    var dir = dirs[d].replace(/^"|"$/g, "").replace(/^\s+|\s+$/g, "");
+    if (!dir) continue;
+    for (var n = 0; n < names.length; n++) addIfFile(found, "7z", path.join(dir, names[n]));
+  }
 
+  addIfFile(found, "tar", path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe"));
+
+  /* Ayni exe birden fazla yoldan gelmis olabilir. */
+  var seen = {};
+  var unique = [];
+  for (var u = 0; u < found.length; u++) {
+    var key = found[u].path.toLowerCase();
+    if (seen[key]) continue;
+    seen[key] = true;
+    unique.push(found[u]);
+  }
+  return unique;
+}
+
+/* Geriye donuk: tek arac bekleyen cagiranlar icin ilk aday. */
+function findExtractor(toolsDir) {
+  var all = findExtractors(toolsDir);
+  return all.length ? all[0] : null;
+}
+
+function extractorArgs(kind, archivePath, destDir) {
+  if (kind === "bandizip") return ["x", "-y", "-o:" + destDir, archivePath];
+  if (kind === "winrar") return ["x", "-y", "-ibck", archivePath, destDir + path.sep];
+  if (kind === "tar") return ["-xf", archivePath, "-C", destDir];
+  return ["x", archivePath, "-o" + destDir, "-y"];
+}
+
+function runExtractor(tool, archivePath, destDir, onLog) {
+  var args = extractorArgs(tool.kind, archivePath, destDir);
   if (onLog) onLog("Aciliyor (" + tool.kind + "): " + tool.path + " " + args.join(" "));
 
   return new Promise(function (resolve, reject) {
@@ -237,21 +291,98 @@ function extractArchive(archivePath, destDir, onLog) {
     proc.stderr.on("data", collect);
 
     proc.on("error", function (err) {
-      reject(new Error(tool.kind + " calistirilamadi: " + err.message));
+      reject(new Error("calistirilamadi: " + err.message));
     });
 
     proc.on("close", function (code) {
       if (code === 0) {
-        resolve({ tool: tool.kind });
+        resolve({ tool: tool.kind, path: tool.path });
       } else {
-        reject(new Error(
-          tool.kind + " arsivi acamadi (kod " + code + "). "
-          + (tool.kind === "tar" ? "Windows'un tar'i bu 7z'yi okuyamadi; 7-Zip kurmak cozer. " : "")
-          + tail.slice(-5).join(" | ")
-        ));
+        reject(new Error("kod " + code + " " + tail.slice(-3).join(" | ")));
       }
     });
   });
+}
+
+/*
+  Hicbir acici ise yaramazsa 7-Zip'in tek dosyalik konsol surumunu
+  (7zr.exe, ~600 KB, resmi site) toolsDir'e indirir. Kurulum gerektirmiyor,
+  yonetici izni istemiyor; 7z formatini tam cozuyor.
+*/
+function bootstrapSevenZr(toolsDir, onLog) {
+  var target = path.join(toolsDir, "7zr.exe");
+
+  if (fs.existsSync(target)) return Promise.resolve(target);
+  if (onLog) onLog("Acici bulunamadi. 7zr.exe indiriliyor: " + SEVEN_ZR.url);
+
+  return download(SEVEN_ZR.url, target).then(function () {
+    var size = 0;
+    try { size = fs.statSync(target).size; } catch (e) {}
+
+    var head = "";
+    try {
+      var fd = fs.openSync(target, "r");
+      var buf = Buffer.alloc(2);
+      fs.readSync(fd, buf, 0, 2, 0);
+      fs.closeSync(fd);
+      head = buf.toString("latin1");
+    } catch (e2) {}
+
+    if (size < SEVEN_ZR.minBytes || head !== "MZ") {
+      try { fs.unlinkSync(target); } catch (e3) {}
+      throw new Error("indirilen 7zr.exe gecerli degil (" + size + " bayt).");
+    }
+
+    if (onLog) onLog("7zr.exe indi (" + formatBytes(size) + ").");
+    return target;
+  });
+}
+
+/*
+  extractArchive(archivePath, destDir, onLog, options)
+  options: { toolsDir, allowDownload }
+
+  Adaylari sirayla dener; hepsi duserse 7zr.exe indirip son bir deneme yapar.
+  allowDownload:false verilirse indirme atlanir (testler, cevrimdisi kurulum).
+*/
+function extractArchive(archivePath, destDir, onLog, options) {
+  options = options || {};
+  var log = onLog || function () {};
+  var toolsDir = options.toolsDir || path.dirname(archivePath);
+
+  if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+
+  var tools = findExtractors(toolsDir);
+  var errors = [];
+
+  function finalError() {
+    return new Error(
+      "Arsiv acilamadi.\n  "
+      + (errors.length ? errors.join("\n  ") : "hicbir acici bulunamadi")
+      + "\n7-Zip kur (7-zip.org) ya da arsivi elle ac: " + archivePath + " -> " + destDir
+    );
+  }
+
+  function attempt(index) {
+    if (index < tools.length) {
+      return runExtractor(tools[index], archivePath, destDir, log).catch(function (err) {
+        errors.push(tools[index].kind + " " + tools[index].path + ": " + err.message);
+        log(tools[index].kind + " olmadi (" + err.message + "), sonraki arac deneniyor.");
+        return attempt(index + 1);
+      });
+    }
+
+    if (options.allowDownload === false) return Promise.reject(finalError());
+
+    return bootstrapSevenZr(toolsDir, log).then(function (zrPath) {
+      return runExtractor({ kind: "7z", path: zrPath }, archivePath, destDir, log);
+    }).catch(function (err) {
+      errors.push("7zr.exe: " + err.message);
+      return Promise.reject(finalError());
+    });
+  }
+
+  return attempt(0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -348,7 +479,10 @@ function ensureWhisper(options) {
     });
   }).then(function (archivePath) {
     progress({ phase: "extract", ratio: 0 });
-    return extractArchive(archivePath, installDir, log).then(function (info) {
+    return extractArchive(archivePath, installDir, log, {
+      toolsDir: toolsDir,
+      allowDownload: options.allowExtractorDownload !== false
+    }).then(function (info) {
       progress({ phase: "extract", ratio: 1 });
       log("Acildi (" + info.tool + ").");
       return archivePath;
@@ -383,6 +517,8 @@ module.exports = {
   formatBytes: formatBytes,
   findBinary: findBinary,
   findExtractor: findExtractor,
+  findExtractors: findExtractors,
+  bootstrapSevenZr: bootstrapSevenZr,
   resolveAsset: resolveAsset,
   download: download,
   extractArchive: extractArchive,

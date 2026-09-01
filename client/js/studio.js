@@ -337,9 +337,19 @@ window.OdiumStudio = (function () {
       $("srcPath").textContent = extra.item.mediaPath || "dosya yolu yok";
       $("srcSeq").textContent = extra.sequence ? extra.sequence.name : "sequence yok";
 
+      var audioOnly = extra.occurrenceCount > 0;
+      for (var oi = 0; oi < (extra.occurrences || []).length; oi++) {
+        if (!extra.occurrences[oi].audio) { audioOnly = false; break; }
+      }
+
       $("srcOcc").textContent = extra.occurrenceCount === 0
         ? "kullanilmiyor - sadece SRT uretilir"
-        : extra.occurrenceCount + " yerde";
+        : extra.occurrenceCount + " yerde" + (audioOnly ? " (ses track'i)" : "");
+
+      if (extra.occurrenceCount === 0) {
+        log("Klip aktif sequence'de bulunamadi. Efektli mod calismaz; "
+          + "klibi timeline'a koyup tekrar Oku'ya bas.");
+      }
 
       /*
         Nest secildiginde projectItem bir sequence oluyor; host icine inip
@@ -773,7 +783,8 @@ window.OdiumStudio = (function () {
 
     var cues = cuesForSequence();
     if (!cues || !cues.length) {
-      log("Klip timeline'da bulunamadi - efektli mod sequence konumu gerektiriyor.");
+      log("Klip aktif sequence'de bulunamadi - efektli mod sequence konumu gerektiriyor. "
+        + "Klibi timeline'a koy, sonra Kaynak > Oku'ya tekrar bas.");
       setPill("timeline'da yok", "err");
       return;
     }

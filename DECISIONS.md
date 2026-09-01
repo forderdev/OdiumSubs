@@ -328,6 +328,43 @@ yer kaplayanı seçiyor ve panel kaç kaynak bulunduğunu yazıyor.
 | Nest 99.167 sn sağa kaydırıldı | SRT: öbek 1 `0:04.88` → `00:01:44,047` |
 | Kayma tutarlılığı | Öbek 2 de tam 99.167 sn kaymış |
 
+## Ses track'indeki klipler (2026-09-01)
+
+**Sorun:** efektli mod "Klip timeline'da bulunamadı - efektli mod sequence konumu
+gerektiriyor." diyip duruyordu. `PP_walkOccurrences` yalnızca `seq.videoTracks`
+geziyordu; ses dosyaları, videosu silinmiş kayıtlar ve sadece A1'e atılmış
+voiceover'lar hiçbir zaman bulunmuyor, occurrence sayısı 0 kalıyordu. SRT modu
+kaynak zamanına düştüğü için çalışıyor, MOGRT modu düşemediği için duruyordu.
+
+**Çözüm:** `PP_trackGroups` video + audio track'lerin ikisini de veriyor;
+`PP_walkOccurrences` ve `PP_dominantSourceInSequence` bu grupların üzerinden
+yürüyor. Bulunan kayıtlar `audio` bayrağı taşıyor, panel "N yerde (ses track'i)"
+yazıyor.
+
+**Neden eleme gerekti:** A/V bağlı klip hem video hem audio track'te duruyor, yani
+aynı yer iki occurrence üretiyor ve her öbek iki kez basılırdı. `PP_sameMapping`
+aynı kaymaya (`start − inPoint`, 10 ms tolerans) sahip ve zamanda örtüşen
+kayıtlardan yalnızca ilkini tutuyor; video kayıtları önce sıralandığı için tutulan
+hep video oluyor. Aynı kaynağın timeline'daki başka kullanımı farklı kayma taşıdığı
+için elenmiyor. Nest'in `seconds` sayımı da artık video/ses ayrı tutulup
+`max` alınıyor — toplasaydı A/V kaynak iki kat uzun görünürdü.
+
+## Arşiv açıcı zinciri (2026-09-01)
+
+**Sorun:** kurulum "sadece 7-Zip kabul ediyor" gibi davranıyordu. `findExtractor`
+yalnızca `Program Files-Zipz.exe` ve `tar.exe` biliyordu; 7-Zip kurulu
+olmayan makinede tar.exe'ye düşüyor, bsdtar Faster-Whisper arşivinin BCJ2
+filtresini çözemediği için kod ≠ 0 ile patlıyordu. Kaynakta `.zip` varlık yok,
+tek dağıtım biçimi `.7z`.
+
+**Çözüm:** `findExtractors` sıralı aday listesi döndürüyor —
+7-Zip / winget shim / NanaZip / PeaZip / Bandizip / PATH'teki `7z|7za|7zr.exe`,
+sonra **WinRAR** (7z açıyor, Türkiye'de çok yaygın), en son `tar.exe`.
+`extractArchive` adayları sırayla deniyor, hepsi düşerse 7-Zip'in tek dosyalık
+konsol sürümünü (`7zr.exe`, ~600 KB, 7-zip.org) `tools/` içine indirip son bir
+deneme yapıyor. İnen dosya boyut + `MZ` başlığıyla doğrulanıyor, geçersizse
+siliniyor. `allowExtractorDownload: false` ile indirme kapatılabilir.
+
 ## Açık bilinmeyenler (M0 bunları ölçüyor)
 
 1. `importMGT` klip başına ms → animasyonlu modun eşiği
