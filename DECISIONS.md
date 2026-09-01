@@ -365,6 +365,38 @@ konsol sürümünü (`7zr.exe`, ~600 KB, 7-zip.org) `tools/` içine indirip son 
 deneme yapıyor. İnen dosya boyut + `MZ` başlığıyla doğrulanıyor, geçersizse
 siliniyor. `allowExtractorDownload: false` ile indirme kapatılabilir.
 
+## Hata avı (2026-09-01)
+
+Tüm üretim yolu satır satır okundu; bulunan hatalar ve düzeltmeleri. Test
+sayısı 100 → 159. `engine/test/host-sandbox.js` eklendi: `jsx/host.jsx`'in saf
+fonksiyonlarını (occurrence yürütücüsü, JSON serileştirici) sahte Premiere
+nesneleriyle node içinde koşturuyor — bu matematik bugüne kadar ancak
+Premiere'de gözle doğrulanabiliyordu.
+
+| # | Belirti | Kök sebep | Düzeltme |
+|---|---|---|---|
+| 1 | **Başka klibin altyazısı basılıyor** | `expectedJsonPath` çıktı klasöründeki *en yeni* JSON'a düşüyordu. Whisper çıktı yazmadan çökerse önceki klibin JSON'u geçerli sonuç sayılıyordu | Çalışma başlangıcından eski dosyalar reddediliyor (1 sn tolerans) |
+| 2 | **In/Out modunda altyazılar kayıyor** | Ses `startSeconds`'tan itibaren çıkarılıyor, Whisper zamanları 0'dan başlıyor; kaynak medya zamanına geri taşınmıyordu. Kayma tam olarak başlangıç saniyesi kadar | `pipeline.shiftTimes` ile kelime/segment zamanları geri taşınıyor |
+| 3 | **Hızı değiştirilmiş klipte artan kayma** | `mapToSequence` `speed`'i yok sayıyordu; 2x klipte hata klip ilerledikçe büyüyordu | Formül `seqTime = start + (source − inPoint) / speed`. Occurrence artık `speed` taşıyor; nest'lerde hız çarpanları affine olarak birleştiriliyor |
+| 4 | **Ters çevrilmiş klipte yanlış yerleşim** | Reverse edilmiş klipte kaynak zamanı geri akıyor, formül sessizce yanlış sonuç veriyordu | Occurrence `reversed` taşıyor, eşleme boş dönüyor, panel sebebi yazıyor |
+| 5 | **Panel kalıcı kilitleniyor** | MOGRT paketleri `setTimeout` ile zincirlendiği için 2. ve sonraki paketlerin hatası dıştaki `.catch`'e ulaşmıyordu; `state.busy` true kalıyor, butonlar bir daha açılmıyordu | Her paket kendi hatasını `mogrtFailed`'e veriyor |
+| 6 | **Kendi altyazı klibimiz kaynak sanılıyor** | `PP_getSelection` ana döngüde MGT kliplerini eliyor ama "sadece ses seçilmiş" yedek yolu `timelineItems[0]`'ı koşulsuz alıyordu | Yedek yol da `isMGT` elemesi yapıyor |
+| 7 | **Öbek kuralları sessizce kapanıyor** | Boş sayı kutusu `Number("") → 0`, bozuk giriş `NaN`; `NaN` atanınca bütün karşılaştırmalar false dönüyor ve tek dev öbek çıkıyordu | `buildOptions` sayısal alanlarda geçersiz değeri yok sayıyor |
+| 8 | **`-ss NaN` ile ffmpeg patlıyor** | In/Out kutuları doğrudan `Number()` ile geçiriliyordu | `positiveNumber` süzgeci |
+| 9 | **Metin boş basılabilir** | `PP_writeTextParam` doğrudan `JSON.stringify` çağırıyordu; ExtendScript'te native JSON garanti değil (parse tarafında zaten eval yedeği vardı) | `PP_stringify` + ES3 yedek serileştirici |
+| 10 | **Whisper ilerlemesi 60 kat yanlış** | Milisaniyesiz zaman damgası `MM:SS` sayılıyordu | Damga her zaman `HH:MM:SS[.mmm]` |
+| 11 | **Font listeden düşebiliyor** | `seen` / `map` düz `{}`; "constructor" gibi bir font adı `Object.prototype` üzerinden "zaten var" görünüyordu | `Object.create(null)` |
+| 12 | **Panel quirks modunda** | `client/index.html` doctype taşımıyordu | `<!DOCTYPE html>` + `<html lang="tr">` |
+| 13 | **Güncelleme adresi doğrulanmadan kabuğa gidiyordu** | `cmd /c start "" <url>`, URL uzaktaki manifest'ten | Sadece `https://`, argüman ayırıcı karakter içermeyen adres açılıyor |
+| 14 | **Elle düzeltilen metin bölmede siliniyordu** | `splitCue` öbeği kelimelerden yeniden kuruyordu | Düzenlenmiş metin imleçten bölünüp korunuyor |
+| 15 | Yarım kalan `.wav` diskte kalıyordu | ffmpeg hatasında çıktı silinmiyordu | Hatada siliniyor |
+| 16 | İndirilen `7zr.exe` repoya girebilirdi | `.gitignore` kapsamıyordu | `tools/7zr.exe`, `tools/*.7z` eklendi |
+
+**Bilinen sınır:** ters çevrilmiş (reverse) klipte efektli mod çalışmıyor —
+öbek yerine uyarı veriyor. Ölçüm probe'ları (`PP_probe*`) bu turda üretim
+yolundan daha yüzeysel gözden geçirildi; hepsi kendi `try/catch`'i içinde ve
+sonucu yalnızca log dosyasına yazıyor.
+
 ## Açık bilinmeyenler (M0 bunları ölçüyor)
 
 1. `importMGT` klip başına ms → animasyonlu modun eşiği

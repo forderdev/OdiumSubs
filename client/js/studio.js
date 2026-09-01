@@ -100,6 +100,17 @@ window.OdiumStudio = (function () {
     $(textId).textContent = text || "";
   }
 
+  /*
+    Bos ya da bozuk sayi kutusu. Number("") 0, Number("abc") NaN veriyor;
+    NaN dogrudan ffmpeg argumanina gidiyordu ("-ss NaN") ve ses cikarma
+    anlasilmaz bir hatayla patliyordu.
+  */
+  function positiveNumber(raw) {
+    var n = Number(raw);
+    if (!isFinite(n) || n <= 0) return undefined;
+    return n;
+  }
+
   function timeLabel(seconds) {
     var s = Math.max(0, seconds);
     var m = Math.floor(s / 60);
@@ -424,8 +435,8 @@ window.OdiumStudio = (function () {
       workDir: workDir,
       toolsDir: toolsDir,
 
-      startSeconds: scope === "range" ? Number($("optStart").value) : undefined,
-      durationSeconds: scope === "range" ? Number($("optSeconds").value) : undefined,
+      startSeconds: scope === "range" ? positiveNumber($("optStart").value) : undefined,
+      durationSeconds: scope === "range" ? positiveNumber($("optSeconds").value) : undefined,
 
       model: $("optModel").value,
       language: $("optLanguage").value,
@@ -563,9 +574,26 @@ window.OdiumStudio = (function () {
     if (splitAt <= 0) splitAt = 1;
     if (splitAt >= cue.words.length) splitAt = cue.words.length - 1;
 
-    state.cues.splice(index, 1,
-      makeCue(cue.words.slice(0, splitAt)),
-      makeCue(cue.words.slice(splitAt)));
+    var first = makeCue(cue.words.slice(0, splitAt));
+    var second = makeCue(cue.words.slice(splitAt));
+
+    /*
+      Metin elle duzeltilmisse kelime dizisiyle artik ayni degil; makeCue
+      kelimelerden yeniden kurunca kullanicinin duzeltmesi siliniyordu.
+      Duzenlenmis metni imlecten bolup iki parcaya dagitiyoruz, zamanlar
+      yine kelimelerden geliyor.
+    */
+    if (cue.text !== joinWordText(cue.words)) {
+      var cut = Math.max(0, Math.min(cue.text.length, Number(caret) || 0));
+      var head = cue.text.substring(0, cut).replace(/\s+$/, "");
+      var tail = cue.text.substring(cut).replace(/^\s+/, "");
+      if (head && tail) {
+        setCueText(first, head);
+        setCueText(second, tail);
+      }
+    }
+
+    state.cues.splice(index, 1, first, second);
 
     reindex();
     renderCues();
@@ -598,6 +626,19 @@ window.OdiumStudio = (function () {
     reindex();
     renderCues();
     log("Obek " + (index + 1) + " silindi.");
+  }
+
+  function joinWordText(words) {
+    var parts = [];
+    for (var i = 0; i < (words || []).length; i++) parts.push(words[i].word);
+    return parts.join(" ");
+  }
+
+  /* Metni ve ona bagli satir sarmasini birlikte gunceller. */
+  function setCueText(cue, text) {
+    cue.text = text;
+    cue.lines = engine.chunker.wrapLines(text,
+      Number($("optMaxChars").value), state.style === "caption" ? 2 : 1);
   }
 
   function makeCue(words) {
@@ -655,6 +696,16 @@ window.OdiumStudio = (function () {
     Obekleri sequence zamanina cevirir. Klip timeline'da birden fazla yerde
     kullaniliyorsa hepsine dagitilir; klip disi obekler atilir (karar 5b).
   */
+  /* Kullanimlarin hepsi ters cevrilmisse mapToSequence hicbir obek uretmez. */
+  function allOccurrencesReversed() {
+    var occ = state.selection ? state.selection.occurrences : null;
+    if (!occ || !occ.length) return false;
+    for (var i = 0; i < occ.length; i++) {
+      if (!occ[i].reversed) return false;
+    }
+    return true;
+  }
+
   function cuesForSequence() {
     var occ = state.selection ? state.selection.occurrences : [];
     if (!occ || !occ.length) return null;
@@ -783,6 +834,13 @@ window.OdiumStudio = (function () {
 
     var cues = cuesForSequence();
     if (!cues || !cues.length) {
+      if (allOccurrencesReversed()) {
+        log("Klibin timeline'daki kullanimlari ters cevrilmis (reverse). "
+          + "Ters klipte kaynak zamani geri aktigi icin obekler guvenli eslenemiyor; "
+          + "SRT modunu kullan ya da klibi duz haliyle yerlestir.");
+        setPill("ters klip", "err");
+        return;
+      }
       log("Klip aktif sequence'de bulunamadi - efektli mod sequence konumu gerektiriyor. "
         + "Klibi timeline'a koy, sonra Kaynak > Oku'ya tekrar bas.");
       setPill("timeline'da yok", "err");
@@ -821,6 +879,16 @@ window.OdiumStudio = (function () {
     $("btnApply").disabled = true;
     setPill("basiliyor", "busy");
     setProgress("mogrtProgWrap", "mogrtProgBar", "mogrtProgText", 0, "track hazirlaniyor");
+
+    /* Hangi adimda patlarsa patlasin panel calisir duruma donmeli. */
+    function mogrtFailed(err) {
+      state.busy = false;
+      $("btnApply").disabled = false;
+      updateTranscribeButton();
+      show("mogrtProgWrap", false);
+      setPill("hata", "err");
+      log("HATA: " + (err && err.message ? err.message : err));
+    }
 
     PremiereBridge.ensureSubtitleTrack({
       trackName: trackName,
@@ -880,6 +948,12 @@ window.OdiumStudio = (function () {
         payload.trackIndex = trackIndex;
         payload.cues = slice;
 
+        /*
+          Paketler setTimeout ile zincirlendigi icin ikinci ve sonraki
+          paketlerin hatasi disaridaki .catch'e ULASMIYOR. Yakalanmayan hata
+          panelde state.busy true kaliyor, butonlar bir daha acilmiyordu -
+          her paket kendi hatasini bildiriyor.
+        */
         return PremiereBridge.placeSubtitles(payload).then(function (res) {
           if (!res.ok) throw new Error(res.message);
 
@@ -892,18 +966,14 @@ window.OdiumStudio = (function () {
           setProgress("mogrtProgWrap", "mogrtProgBar", "mogrtProgText",
             offset / total, placed + " / " + total + " klip");
           setTimeout(nextBatch, 30);
+        }).catch(function (err) {
+          log(placed + " klip basildiktan sonra durdu.");
+          mogrtFailed(err);
         });
       }
 
       nextBatch();
-    }).catch(function (err) {
-      state.busy = false;
-      $("btnApply").disabled = false;
-      updateTranscribeButton();
-      show("mogrtProgWrap", false);
-      setPill("hata", "err");
-      log("HATA: " + err.message);
-    });
+    }).catch(mogrtFailed);
   }
 
   function applyToTimeline() {
@@ -972,6 +1042,17 @@ window.OdiumStudio = (function () {
       pill.onclick = function () {
         var url = remote.setupUrl || local.setupUrl;
         if (!url) { log("Kurulum adresi tanimli degil."); return; }
+
+        /*
+          Adres uzaktaki manifest'ten geliyor; dogrudan kabuga verilmemeli.
+          Sadece https adresine izin veriliyor, arguman ayirici karakter
+          tasiyan adres reddediliyor.
+        */
+        if (!/^https:\/\/[^\s"'&|<>^]+$/.test(String(url))) {
+          log("Kurulum adresi guvenli gorunmuyor, acilmadi: " + url);
+          return;
+        }
+
         try {
           childProcess.spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" }).unref();
           log("Tarayicida aciliyor: " + url);

@@ -13,6 +13,8 @@ var whisper = require("../whisper.js");
 var audio = require("../audio.js");
 var installer = require("../installer.js");
 var fonts = require("../fonts.js");
+var pipeline = require("../pipeline.js");
+var hostbox = require("./host-sandbox.js");
 
 var passed = 0;
 var failed = 0;
@@ -298,6 +300,9 @@ console.log("\n=== whisper: ilerleme satiri ===");
   eq("alakasiz satir null", whisper.parseProgressLine("Loading model...", 100), null);
   var r = whisper.parseProgressLine("[00:00:50.000 --> 00:00:52.000]  metin", 100);
   near("zaman damgasindan oran", r, 0.5, 0.01);
+  near("milisaniyeli damga", whisper.parseProgressLine("[00:01:15.480 --> 00:01:18.200] metin", 150), 0.5032, 0.001);
+  near("milisaniyesiz damga da saat:dakika:saniye",
+    whisper.parseProgressLine("[00:01:15 --> 00:01:18] metin", 150), 0.5, 0.001);
 }
 
 console.log("\n=== whisper: CLI argumanlari ===");
@@ -456,6 +461,235 @@ console.log("\n=== uctan uca: whisper JSON -> obek -> SRT ===");
   var text = srt.toSrt(cues);
   check("SRT Turkce metni tasidi", text.indexOf("Dışarı çıkalım mı") > 0);
   eq("SRT geri okunabildi", srt.fromSrt(text).length, 2);
+}
+
+
+console.log("\n=== chunker: bozuk ayarlar varsayilani ezmesin ===");
+{
+  /* Panelde bos birakilan kutu Number("") -> NaN veriyor. */
+  var opt = chunker.buildOptions({ mode: "chunk", maxWords: NaN, maxDuration: "", maxCharsPerLine: "40" });
+  eq("NaN maxWords varsayilanda kaldi", opt.maxWords, 5);
+  eq("bos maxDuration varsayilanda kaldi", opt.maxDuration, 2.5);
+  eq("metin sayi cevrildi", opt.maxCharsPerLine, 40);
+
+  var w = words([
+    ["bir", 0.0, 0.3], ["iki", 0.3, 0.6], ["uc", 0.6, 0.9],
+    ["dort", 0.9, 1.2], ["bes", 1.2, 1.5], ["alti", 1.5, 1.8]
+  ]);
+  var cues = chunker.chunkWords(w, { mode: "chunk", maxWords: NaN });
+  eq("NaN ayarla obekleme yine bolundu", cues.length, 2);
+}
+
+console.log("\n=== chunker: hiz degistirilmis klip eslemesi ===");
+{
+  var cues = [{ index: 0, start: 4, end: 6, text: "iki kat hizli" }];
+
+  var normal = chunker.mapToSequence(cues, { start: 0, inPoint: 0, outPoint: 20, speed: 1 });
+  near("normal hizda kayma yok", normal[0].start, 4);
+
+  var fast = chunker.mapToSequence(cues, { start: 0, inPoint: 0, outPoint: 20, speed: 2 });
+  near("2x klipte kaynak 4 sn -> sequence 2 sn", fast[0].start, 2);
+  near("2x klipte bitis 3 sn", fast[0].end, 3);
+
+  var slow = chunker.mapToSequence(cues, { start: 10, inPoint: 0, outPoint: 20, speed: 0.5 });
+  near("0.5x klipte kaynak 4 sn -> sequence 18 sn", slow[0].start, 18);
+
+  var missing = chunker.mapToSequence(cues, { start: 0, inPoint: 0, outPoint: 20 });
+  near("speed yoksa 1 sayiliyor", missing[0].start, 4);
+
+  var reversed = chunker.mapToSequence(cues, { start: 0, inPoint: 0, outPoint: 20, speed: 1, reversed: true });
+  eq("ters klip icin obek uretilmiyor", reversed.length, 0);
+}
+
+console.log("\n=== pipeline: In/Out modunda zaman kaydirma ===");
+{
+  var shifted = pipeline.shiftTimes([{ word: "a", start: 0, end: 0.5 }, { word: "b", start: 1, end: 1.5 }], 120);
+  near("ilk kelime kaynak zamanina tasindi", shifted[0].start, 120);
+  near("ikinci kelime bitisi", shifted[1].end, 121.5);
+  eq("metin korundu", shifted[1].word, "b");
+
+  var same = pipeline.shiftTimes([{ start: 3, end: 4 }], 0);
+  near("offset 0 ise dokunulmuyor", same[0].start, 3);
+}
+
+console.log("\n=== whisper: bayat JSON kabul edilmiyor ===");
+{
+  var os = require("os");
+  var fsx = require("fs");
+  var pathx = require("path");
+
+  var dir = pathx.join(os.tmpdir(), "odium-test-" + Date.now());
+  fsx.mkdirSync(dir, { recursive: true });
+
+  var stale = pathx.join(dir, "onceki-klip.json");
+  fsx.writeFileSync(stale, "{}");
+  var old = new Date(Date.now() - 10 * 60 * 1000);
+  fsx.utimesSync(stale, old, old);
+
+  var now = Date.now();
+  eq("baska klibin eski JSON'u secilmiyor", whisper.expectedJsonPath(pathx.join(dir, "ses.wav"), dir, now), null);
+
+  var fresh = pathx.join(dir, "ses.json");
+  fsx.writeFileSync(fresh, "{}");
+  eq("taze JSON bulunuyor", whisper.expectedJsonPath(pathx.join(dir, "ses.wav"), dir, now), fresh);
+
+  try { fsx.unlinkSync(stale); fsx.unlinkSync(fresh); fsx.rmdirSync(dir); } catch (e) {}
+}
+
+console.log("\n=== host.jsx: occurrence yurutucusu ===");
+{
+  var media = hostbox.mediaItem("media-1", "andre");
+  var baska = hostbox.mediaItem("media-2", "muzik");
+
+  /* 1. A/V bagli klip: iki track'te duruyor ama tek kullanim sayilmali */
+  var avSeq = hostbox.sequence({
+    video: [[hostbox.clip({ start: 10, end: 14, inPoint: 5, item: media })]],
+    audio: [[hostbox.clip({ start: 10, end: 14, inPoint: 5, item: media })]]
+  });
+  var av = hostbox.occurrences(hostbox.load([]), avSeq, "media-1");
+  eq("A/V bagli klip tek occurrence", av.length, 1);
+  eq("tutulan kayit video", av[0].audio, false);
+  near("start", av[0].start, 10);
+  near("inPoint", av[0].inPoint, 5);
+  near("outPoint", av[0].outPoint, 9);
+
+  /* 2. Sadece ses track'inde duran klip (bugunku hata) */
+  var sesSeq = hostbox.sequence({
+    video: [[hostbox.clip({ start: 0, end: 4, inPoint: 0, item: baska })]],
+    audio: [[hostbox.clip({ start: 30, end: 40, inPoint: 2, item: media })]]
+  });
+  var ses = hostbox.occurrences(hostbox.load([]), sesSeq, "media-1");
+  eq("ses track'indeki klip bulundu", ses.length, 1);
+  eq("ses bayragi acik", ses[0].audio, true);
+  near("ses klibi start", ses[0].start, 30);
+
+  /* 3. Ayni kaynagin iki ayri kullanimi elenmemeli */
+  var ikiSeq = hostbox.sequence({
+    video: [[
+      hostbox.clip({ start: 0, end: 5, inPoint: 0, item: media }),
+      hostbox.clip({ start: 20, end: 25, inPoint: 40, item: media })
+    ]]
+  });
+  eq("iki ayri kullanim korundu", hostbox.occurrences(hostbox.load([]), ikiSeq, "media-1").length, 2);
+
+  /* 4. Hizlandirilmis klip */
+  var hizSeq = hostbox.sequence({
+    video: [[hostbox.clip({ start: 0, end: 5, inPoint: 0, speed: 2, item: media })]]
+  });
+  var hiz = hostbox.occurrences(hostbox.load([]), hizSeq, "media-1")[0];
+  near("2x klipte 5 sn sequence = 10 sn kaynak", hiz.outPoint, 10);
+  near("occurrence hizi", hiz.speed, 2);
+  near("2x klipte kaynak 4 sn -> sequence 2 sn",
+    chunker.mapToSequence([{ start: 4, end: 4.5 }], hiz)[0].start, 2);
+
+  /* 5. Ters cevrilmis klip isaretleniyor */
+  var tersSeq = hostbox.sequence({
+    video: [[hostbox.clip({ start: 0, end: 5, inPoint: 0, reversed: true, item: media })]]
+  });
+  eq("ters klip isaretli", hostbox.occurrences(hostbox.load([]), tersSeq, "media-1")[0].reversed, true);
+
+  /* 6. Nest: ic klibin kaynak zamani dis sequence zamanina cevriliyor */
+  var nestItem = hostbox.mediaItem("nest-1", "Nested Sequence 01");
+  var icSeq = hostbox.sequence({
+    name: "Nested Sequence 01",
+    item: nestItem,
+    video: [[hostbox.clip({ start: 0, end: 20, inPoint: 5, item: media })]]
+  });
+  var disSeq = hostbox.sequence({
+    video: [[hostbox.clip({ start: 100, end: 120, inPoint: 0, item: nestItem })]]
+  });
+  var nest = hostbox.occurrences(hostbox.load([icSeq]), disSeq, "media-1")[0];
+  eq("nest icindeki klip bulundu", nest.nested, true);
+  near("nest start", nest.start, 100);
+  near("nest inPoint", nest.inPoint, 5);
+  near("kaynak 7 sn -> sequence 102 sn",
+    chunker.mapToSequence([{ start: 7, end: 8 }], nest)[0].start, 102);
+
+  /* 7. Kirpilmis nest: disarida kalan kisim sayilmamali */
+  var kirpikDis = hostbox.sequence({
+    video: [[hostbox.clip({ start: 100, end: 110, inPoint: 3, item: nestItem })]]
+  });
+  var kirpik = hostbox.occurrences(hostbox.load([icSeq]), kirpikDis, "media-1")[0];
+  near("kirpilmis nest start", kirpik.start, 100);
+  near("kirpilmis nest inPoint", kirpik.inPoint, 8);
+  near("kirpilmis nest outPoint", kirpik.outPoint, 18);
+
+  /* 8. Hizlandirilmis nest: iki kademe hiz birlesiyor */
+  var hizliDis = hostbox.sequence({
+    video: [[hostbox.clip({ start: 0, end: 10, inPoint: 0, speed: 2, item: nestItem })]]
+  });
+  var hizliNest = hostbox.occurrences(hostbox.load([icSeq]), hizliDis, "media-1")[0];
+  near("2x nest icinde occurrence hizi", hizliNest.speed, 2);
+  near("2x nest bitisi", hizliNest.end, 10);
+  near("2x nest: kaynak 15 sn -> sequence 5 sn",
+    chunker.mapToSequence([{ start: 15, end: 16 }], hizliNest)[0].start, 5);
+
+  /* 9. Hem kirpilmis hem hizlandirilmis nest - iki duzeltme birlikte */
+  var zorDis = hostbox.sequence({
+    video: [[hostbox.clip({ start: 50, end: 60, inPoint: 4, speed: 2, item: nestItem })]]
+  });
+  var zor = hostbox.occurrences(hostbox.load([icSeq]), zorDis, "media-1")[0];
+  near("kirpik+hizli nest start", zor.start, 50);
+  /*
+    Nest 10 sn yer kapliyor ve 2x hizli, yani 20 sn ic malzeme istiyor; ic
+    sequence 4. saniyeden sonra sadece 16 sn tasiyor. Kullanim 8 sn'de bitiyor,
+    son 2 sn'de gosterecek goruntu yok - occurrence bunu dogru kesiyor.
+  */
+  near("kirpik+hizli nest end", zor.end, 58);
+  near("kirpik+hizli nest inPoint", zor.inPoint, 9);
+  near("kirpik+hizli nest outPoint", zor.outPoint, 25);
+  near("kirpik+hizli nest hizi", zor.speed, 2);
+
+  var zorCues = chunker.mapToSequence([{ start: 9, end: 10 }, { start: 24, end: 25 }], zor);
+  near("ilk obek nest'in basinda", zorCues[0].start, 50);
+  near("son obek nest'in sonunda", zorCues[1].end, 58);
+  eq("nest disi obek atildi",
+    chunker.mapToSequence([{ start: 100, end: 101 }], zor).length, 0);
+}
+
+console.log("\n=== host.jsx: JSON yedek serilestirici ===");
+{
+  var host = hostbox.load([]);
+
+  /* Metin blob'unun tasidigi alanlar: string, sayi dizisi, ic ice nesne. */
+  var blob = {
+    textEditValue: "Merhaba \"dunya\" ÇĞİŞ",
+    fontTextRunLength: [21],
+    fontEditValue: ["Montserrat-Black"],
+    fontSizeEditValue: [90],
+    bold: false,
+    nested: { a: 1, b: null }
+  };
+
+  var yedek = host.PP_stringifyValue(blob);
+  eq("yedek serilestirici gecerli JSON uretti",
+    JSON.stringify(JSON.parse(yedek)), JSON.stringify(blob));
+  check("tirnak kacisi dogru", yedek.indexOf('\\"dunya\\"') > 0, yedek.substring(0, 80));
+  eq("satir sonu kaciriliyor", host.PP_stringifyValue("a\nb"), '"a\\nb"');
+  eq("sonsuz sayi null oluyor", host.PP_stringifyValue(Infinity), "null");
+  eq("dizi bicimi", host.PP_stringifyValue([1, "iki", true]), '[1,"iki",true]');
+  eq("Turkce karakter bozulmadi", JSON.parse(yedek).textEditValue, blob.textEditValue);
+}
+
+console.log("\n=== host.jsx: nest icindeki baskin kaynak ===");
+{
+  var host = hostbox.load([]);
+  var media = hostbox.mediaItem("media-1", "andre");
+  var kisa = hostbox.mediaItem("media-2", "jingle");
+
+  var seq = hostbox.sequence({
+    video: [[
+      hostbox.clip({ start: 0, end: 10, inPoint: 0, item: media }),
+      hostbox.clip({ start: 10, end: 16, inPoint: 0, item: kisa })
+    ]],
+    audio: [[hostbox.clip({ start: 0, end: 10, inPoint: 0, item: media })]]
+  });
+
+  var tally = host.PP_dominantSourceInSequence(seq, 0, {});
+  eq("A/V kaynak iki kat sayilmadi", tally["media-1"].seconds, 10);
+  eq("ses tarafi da olculdu", tally["media-1"].audio, 10);
+  eq("kisa kaynak ayri sayildi", tally["media-2"].seconds, 6);
+  check("baskin kaynak dogru", tally["media-1"].seconds > tally["media-2"].seconds);
 }
 
 console.log("\n----------------------------------------");

@@ -29,6 +29,24 @@ var PHASES = {
   chunk: { label: "Obekleniyor", weight: 0.02 }
 };
 
+/*
+  Zaman tasiyan kayitlari (kelime / segment) offset kadar kaydirir.
+  Girdiyi bozmaz - yeni dizi doner. offset 0 ise ayni dizi geri verilir.
+*/
+function shiftTimes(items, offset) {
+  if (!items || !items.length || !offset) return items || [];
+
+  var out = [];
+  for (var i = 0; i < items.length; i++) {
+    var copy = {};
+    for (var k in items[i]) if (items[i].hasOwnProperty(k)) copy[k] = items[i][k];
+    if (typeof copy.start === "number") copy.start += offset;
+    if (typeof copy.end === "number") copy.end += offset;
+    out.push(copy);
+  }
+  return out;
+}
+
 function safeName(text) {
   return String(text).replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "").substring(0, 60) || "media";
 }
@@ -169,7 +187,18 @@ function transcribeMedia(options) {
     var started = Date.now();
     phase("chunk", 0, "obekleniyor");
 
-    var cues = chunker.chunkWords(transcription.words, options.chunkOptions || {});
+    /*
+      In/Out modunda ses startSeconds'tan itibaren cikariliyor, yani whisper'in
+      verdigi zamanlar 0'dan degil kirpma noktasindan basliyor. Kaynak medya
+      zamanina geri tasimazsak hem SRT hem MOGRT tam startSeconds kadar kayiyor
+      (mapToSequence klibin inPoint'ini kaynak zamaniyla karsilastiriyor).
+    */
+    var startOffset = Number(options.startSeconds) || 0;
+    var words = shiftTimes(transcription.words, startOffset);
+    var segments = shiftTimes(transcription.segments, startOffset);
+    if (startOffset) log("Zamanlar kaynak medyaya tasindi: +" + startOffset + " sn");
+
+    var cues = chunker.chunkWords(words, options.chunkOptions || {});
 
     // Kaynak zamanlari sakla: mapToSequence bunlara ihtiyac duyacak.
     var srtText = srt.toSrt(cues, { offsetSeconds: options.srtOffsetSeconds || 0 });
@@ -186,8 +215,8 @@ function transcribeMedia(options) {
 
     return {
       language: transcription.language,
-      words: transcription.words,
-      segments: transcription.segments,
+      words: words,
+      segments: segments,
       cues: cues,
       srtText: srtText,
       srtPath: writtenPath,
@@ -223,6 +252,7 @@ function distributeToOccurrences(cues, occurrences) {
 
 module.exports = {
   PHASES: PHASES,
+  shiftTimes: shiftTimes,
   transcribeMedia: transcribeMedia,
   distributeToOccurrences: distributeToOccurrences
 };

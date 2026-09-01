@@ -36,6 +36,53 @@ function PP_parseJson(jsonText) {
   }
 }
 
+/*
+  JSON.stringify karsiligi. Premiere'in ExtendScript motorunda native JSON
+  garanti degil (PP_parseJson zaten eval yedegi tasiyor); metin parametresine
+  yazarken stringify yoksa blob HIC yazilamiyordu, yani altyazi metni bos
+  kaliyordu. Yedek serilestirici basit veri icin yeterli: blob'da string,
+  sayi, boolean ve dizi var.
+*/
+function PP_stringify(value) {
+  if (PP_hasNativeJSON()) {
+    try { return JSON.stringify(value); } catch (e) {}
+  }
+  return PP_stringifyValue(value);
+}
+
+/* instanceof farkli baglamlarda yaniltici olabiliyor; sinifi adiyla soruyoruz. */
+function PP_isArray(value) {
+  try {
+    if (Object.prototype.toString.apply(value) === "[object Array]") return true;
+  } catch (e) {}
+  try { return value instanceof Array; } catch (e2) {}
+  return false;
+}
+
+function PP_stringifyValue(value) {
+  if (value === null || value === undefined) return "null";
+
+  var t = typeof value;
+  if (t === "boolean") return value ? "true" : "false";
+  if (t === "number") return isFinite(value) ? String(value) : "null";
+  if (t === "string") return PP_jsonString(value);
+
+  if (PP_isArray(value)) {
+    var items = [];
+    for (var i = 0; i < value.length; i++) items.push(PP_stringifyValue(value[i]));
+    return "[" + items.join(",") + "]";
+  }
+
+  var parts = [];
+  for (var k in value) {
+    if (!value.hasOwnProperty(k)) continue;
+    var v = value[k];
+    if (typeof v === "function") continue;
+    parts.push(PP_jsonString(k) + ":" + PP_stringifyValue(v));
+  }
+  return "{" + parts.join(",") + "}";
+}
+
 function PP_escapeJsonString(value) {
   var s = (value === null || value === undefined) ? "" : String(value);
   var out = "";
@@ -403,7 +450,38 @@ function PP_dominantSourceInSequence(seq, depth, tally) {
   Cikti normal occurrence ile ayni bicimde: { start, inPoint, outPoint }.
   Boylece chunker.mapToSequence hicbir degisiklik olmadan calisiyor.
 */
-function PP_walkOccurrences(seq, targetNodeId, shift, winStart, winEnd, depth, trackIndex, out, isAudio) {
+function PP_clipSpeed(clip) {
+  var speed = 1;
+  try { if (typeof clip.getSpeed === "function") speed = Number(clip.getSpeed()); } catch (e) {}
+  if (!isFinite(speed) || speed <= 0) speed = 1;
+  return speed;
+}
+
+function PP_clipReversed(clip) {
+  try { if (typeof clip.isSpeedReversed === "function") return !!clip.isSpeedReversed(); } catch (e) {}
+  return false;
+}
+
+/*
+  Sequence agacinda yurur ve targetNodeId'nin butun kullanimlarini bulur.
+
+  Zaman donusumu affine tasiniyor:  disZaman = shift + scale * buSequenceZamani
+    - shift : eklenen kayma
+    - scale : hiz carpanlarinin birikimi (nest'ler hizlandirilmis olabilir)
+
+  Bir klip icin (baslangic cStart, inPoint cIn, hiz v):
+      buSequenceZamani = cStart + (medyaZamani - cIn) / v
+  Nest'e inerken bu iki formul birlestiriliyor:
+      shift' = shift + scale * cStart - scale * cIn / v
+      scale' = scale / v
+  Ic sequence'de gercekten gorunen aralik da medya zamanina cevriliyor:
+      icPencere = cIn + (gorunen - cStart) * v
+
+  Yapraga (aranan klip) varildiginda cikti su formu tasiyor - mapToSequence
+  bunu dogrudan kullaniyor:
+      disZaman = occ.start + (kaynakZamani - occ.inPoint) / occ.speed
+*/
+function PP_walkOccurrences(seq, targetNodeId, shift, scale, winStart, winEnd, depth, trackIndex, out, isAudio, isReversed) {
   if (!seq || depth > 3) return;
 
   var groups = PP_trackGroups(seq);
@@ -440,15 +518,19 @@ function PP_walkOccurrences(seq, targetNodeId, shift, winStart, winEnd, depth, t
         try { item = clip.projectItem; } catch (e1) { continue; }
         if (!item) continue;
 
+        var speed = PP_clipSpeed(clip);
+        var reversed = isReversed || PP_clipReversed(clip);
+
         var nested = PP_sequenceForItem(item);
         if (nested) {
-          /* Nest: ic sequence zamanina gec, pencereyi ve kaymayi guncelle */
-          var innerShift = shift + cStart - cIn;
-          var innerWinStart = cIn + (visStart - cStart);
-          var innerWinEnd = cIn + (visEnd - cStart);
-          PP_walkOccurrences(nested, targetNodeId, innerShift,
-            innerWinStart, innerWinEnd, depth + 1,
-            (depth === 0 ? t : trackIndex), out, groupAudio);
+          /* Nest: ic sequence zamanina gec, pencereyi ve donusumu guncelle */
+          PP_walkOccurrences(nested, targetNodeId,
+            shift + scale * cStart - scale * cIn / speed,
+            scale / speed,
+            cIn + (visStart - cStart) * speed,
+            cIn + (visEnd - cStart) * speed,
+            depth + 1,
+            (depth === 0 ? t : trackIndex), out, groupAudio, reversed);
           continue;
         }
 
@@ -457,8 +539,8 @@ function PP_walkOccurrences(seq, targetNodeId, shift, winStart, winEnd, depth, t
         if (id !== targetNodeId) continue;
 
         /* Gorunen parcanin medya zamanindaki karsiligi */
-        var mediaIn = cIn + (visStart - cStart);
-        var mediaOut = cIn + (visEnd - cStart);
+        var mediaIn = cIn + (visStart - cStart) * speed;
+        var mediaOut = cIn + (visEnd - cStart) * speed;
 
         var clipName = "";
         try { clipName = clip.name; } catch (e3) {}
@@ -466,10 +548,12 @@ function PP_walkOccurrences(seq, targetNodeId, shift, winStart, winEnd, depth, t
         out.push({
           trackIndex: (depth === 0 ? t : trackIndex),
           name: clipName,
-          start: visStart + shift,
-          end: visEnd + shift,
+          start: shift + scale * visStart,
+          end: shift + scale * visEnd,
           inPoint: mediaIn,
           outPoint: mediaOut,
+          speed: speed / scale,
+          reversed: reversed,
           nested: depth > 0,
           audio: !!groupAudio,
           depth: depth
@@ -486,6 +570,8 @@ function PP_occurrenceObjJson(o) {
     + ',"end":' + o.end
     + ',"inPoint":' + o.inPoint
     + ',"outPoint":' + o.outPoint
+    + ',"speed":' + o.speed
+    + ',"reversed":' + (o.reversed ? "true" : "false")
     + ',"nested":' + (o.nested ? "true" : "false")
     + ',"audio":' + (o.audio ? "true" : "false")
     + ',"depth":' + o.depth + "}";
@@ -499,7 +585,10 @@ function PP_occurrenceObjJson(o) {
   tasidigi icin elenmez.
 */
 function PP_sameMapping(a, b) {
-  if (Math.abs((a.start - a.inPoint) - (b.start - b.inPoint)) > 0.01) return false;
+  if (Math.abs(a.speed - b.speed) > 0.001) return false;
+  var oa = a.start - a.inPoint / a.speed;
+  var ob = b.start - b.inPoint / b.speed;
+  if (Math.abs(oa - ob) > 0.01) return false;
   return Math.min(a.end, b.end) - Math.max(a.start, b.start) > 0.001;
 }
 
@@ -509,7 +598,7 @@ function PP_findOccurrences(seq, nodeId) {
   if (!seq || !nodeId) return parts;
 
   var found = [];
-  PP_walkOccurrences(seq, nodeId, 0, 0, 1e9, 0, 0, found, false);
+  PP_walkOccurrences(seq, nodeId, 0, 1, 0, 1e9, 0, 0, found, false, false);
 
   /* Video kayitlari once degerlendiriliyor; kopya elenirken o kalsin. */
   var ordered = [];
@@ -574,14 +663,25 @@ function PP_getSelection() {
       } catch (e2) {}
     }
 
-    // Timeline'da sadece ses secilmisse (video/audio bagli), yine de item'i al.
-    if (!projectItem && timelineItems.length) {
-      try {
-        if (timelineItems[0].projectItem) {
-          projectItem = timelineItems[0].projectItem;
-          source = "timeline";
-        }
-      } catch (e3) {}
+    /*
+      Timeline'da sadece ses secilmisse (video/audio bagli), yine de item'i al.
+      MGT klipleri burada da elenmeli: yukaridaki dongude atlanan kendi altyazi
+      kliplerimiz bu yedek yoldan geri sizip kaynak sanilirdi.
+    */
+    if (!projectItem) {
+      for (var f = 0; f < timelineItems.length; f++) {
+        var fallback = timelineItems[f];
+        try {
+          if (typeof fallback.isMGT === "function" && fallback.isMGT()) continue;
+        } catch (eF1) {}
+        try {
+          if (fallback.projectItem) {
+            projectItem = fallback.projectItem;
+            source = "timeline";
+            break;
+          }
+        } catch (eF2) {}
+      }
     }
 
     if (!projectItem) {
@@ -900,7 +1000,7 @@ function PP_writeTextParam(param, text, font, fontSize) {
       if (font) obj.fontEditValue = [font];
       if (fontSize) obj.fontSizeEditValue = [fontSize];
       try {
-        param.setValue(JSON.stringify(obj), true);
+        param.setValue(PP_stringify(obj), true);
         return "blob";
       } catch (eSet) {
         return "blob-hata:" + eSet;

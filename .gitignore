@@ -6,6 +6,8 @@
 tools/faster-whisper-xxl/
 tools/ffmpeg.exe
 tools/*.zip
+tools/*.7z
+tools/7zr.exe
 models/
 
 # paketleme ciktilari
