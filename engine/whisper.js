@@ -118,9 +118,13 @@ function parseProgressLine(line, totalSeconds) {
   if (totalSeconds && totalSeconds > 0) {
     var ts = /\[(\d{2}):(\d{2})[:.](\d{2})(?:\.(\d+))?\s*-->/.exec(line);
     if (ts) {
-      // "MM:SS.mmm" veya "HH:MM:SS" olabilir; iki grupla da makul sonuc verir.
-      var a = Number(ts[1]), b = Number(ts[2]), c = Number(ts[3]);
-      var seconds = ts[4] !== undefined ? (a * 3600 + b * 60 + c) : (a * 60 + b + c / 100);
+      /*
+        Bicim her zaman HH:MM:SS[.mmm]. Once milisaniye varsa HH:MM:SS,
+        yoksa MM:SS sayiliyordu; damgasi milisaniyesiz gelen surumde ilerleme
+        60 kat yanlis okunuyordu.
+      */
+      var seconds = Number(ts[1]) * 3600 + Number(ts[2]) * 60 + Number(ts[3]);
+      if (ts[4] !== undefined) seconds += Number("0." + ts[4]);
       var ratio = seconds / totalSeconds;
       if (ratio >= 0 && ratio <= 1) return ratio;
     }
@@ -299,7 +303,7 @@ function transcribe(options) {
         araclarda bilinen bir kapanis hatasi. Cikti gecerliyse basarili say,
         kodu sadece logla.
       */
-      var jsonPath = expectedJsonPath(audioPath, outputDir);
+      var jsonPath = expectedJsonPath(audioPath, outputDir, started);
 
       if (!jsonPath) {
         reject(new Error(
@@ -341,11 +345,24 @@ function transcribe(options) {
 /*
   Whisper ciktiyi <ses adi>.json olarak yazar ama surumler arasi ufak
   farklar olabiliyor; once beklenen adi, sonra klasordeki en yeni .json'u dener.
+
+  notBefore (ms): bu andan ONCE yazilmis dosyalar kabul edilmez. Kritik -
+  is klasorunde onceki bir klibin JSON'u duruyor olabilir. Whisper cikti
+  yazmadan coktugunde eski dosya "gecerli sonuc" sanilip BASKA bir klibin
+  altyazisi basilirdi. Dosya sistemi mtime'i saniyeye yuvarlayabildigi icin
+  1 sn tolerans birakiliyor.
 */
-function expectedJsonPath(audioPath, outputDir) {
+function expectedJsonPath(audioPath, outputDir, notBefore) {
+  var floor = notBefore ? (Number(notBefore) - 1000) : 0;
+
+  function fresh(full) {
+    if (!floor) return true;
+    try { return fs.statSync(full).mtimeMs >= floor; } catch (e) { return false; }
+  }
+
   var base = path.basename(audioPath).replace(/\.[^.]+$/, "");
   var direct = path.join(outputDir, base + ".json");
-  if (fs.existsSync(direct)) return direct;
+  if (fs.existsSync(direct) && fresh(direct)) return direct;
 
   var newest = null;
   var newestTime = 0;
@@ -357,6 +374,7 @@ function expectedJsonPath(audioPath, outputDir) {
     var full = path.join(outputDir, entries[i]);
     var stat;
     try { stat = fs.statSync(full); } catch (e) { continue; }
+    if (stat.mtimeMs < floor) continue;
     if (stat.mtimeMs > newestTime) {
       newestTime = stat.mtimeMs;
       newest = full;
@@ -371,6 +389,7 @@ module.exports = {
   parseWhisperJson: parseWhisperJson,
   parseProgressLine: parseProgressLine,
   buildArgs: buildArgs,
+  expectedJsonPath: expectedJsonPath,
   resolveBinary: resolveBinary,
   transcribe: transcribe
 };

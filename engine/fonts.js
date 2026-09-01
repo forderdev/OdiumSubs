@@ -104,7 +104,6 @@ function readNames(buf, table) {
 
     var value;
     if (platformId === 3) {
-      value = buf.toString("utf16le", offset, offset + length);
       value = swapBytes(buf.slice(offset, offset + length));
     } else {
       value = buf.toString("latin1", offset, offset + length);
@@ -256,7 +255,12 @@ function readFontFile(file) {
 function listFonts(options) {
   options = options || {};
   var started = Date.now();
-  var seen = {};
+  /*
+    Anahtarlar font adlarindan geliyor. Duz {} kullanilirsa "constructor" ya
+    da "toString" adli bir kayit Object.prototype uzerinden "zaten var" gorunup
+    fontu sessizce listeden dusurur.
+  */
+  var seen = Object.create(null);
   var fonts = [];
 
   var dirs = fontDirectories();
@@ -336,7 +340,7 @@ function listFontsCached(cachePath, options) {
 
 /* Aileye gore gruplar - panel iki kademeli secici gosteriyor. */
 function groupByFamily(fonts) {
-  var map = {};
+  var map = Object.create(null);
   var order = [];
 
   for (var i = 0; i < fonts.length; i++) {

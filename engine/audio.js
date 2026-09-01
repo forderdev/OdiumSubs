@@ -157,7 +157,11 @@ function extractAudio(options) {
       output
     );
 
-    return runFfmpeg(ffmpegPath, args, total, options.onProgress).then(function () {
+    return runFfmpeg(ffmpegPath, args, total, options.onProgress).catch(function (err) {
+      /* Yarim kalan wav diskte kalmasin - sonraki calistirmada kafa karistirir. */
+      try { if (fs.existsSync(output)) fs.unlinkSync(output); } catch (e) {}
+      throw err;
+    }).then(function () {
       if (!fs.existsSync(output)) {
         throw new Error("ffmpeg calisti ama cikti dosyasi olusmadi: " + output);
       }

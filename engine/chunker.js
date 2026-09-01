@@ -63,11 +63,26 @@
     options = options || {};
     var mode = options.mode === "classic" ? "classic" : "chunk";
     var base = clone(PRESETS[mode]);
+
     for (var k in options) {
-      if (options.hasOwnProperty(k) && k !== "mode" && options[k] !== undefined && options[k] !== null) {
-        base[k] = options[k];
+      if (!options.hasOwnProperty(k) || k === "mode") continue;
+      var value = options[k];
+      if (value === undefined || value === null) continue;
+
+      /*
+        Panelde bos birakilan sayi kutusu Number("") -> NaN veriyor. NaN
+        atanirsa butun karsilastirmalar false doner: obek bolme kurallari
+        sessizce kapanir ve tek dev obek cikar. Sayisal ayarlarda gecersiz
+        deger varsayilani ezmez.
+      */
+      if (typeof base[k] === "number") {
+        if (value === "" || !isFinite(Number(value))) continue;
+        value = Number(value);
       }
+
+      base[k] = value;
     }
+
     base.mode = mode;
     return base;
   }
@@ -267,14 +282,24 @@
   /*
     Kaynak zamanini sequence zamanina cevirir ve klip disinda kalanlari atar.
     Formul (karar 5b, Probe 1'de dogrulandi):
-        seqTime = clip.start + (sourceTime - clip.inPoint)
-    occurrence: { start, inPoint, outPoint }  - saniye
+        seqTime = clip.start + (sourceTime - clip.inPoint) / speed
+
+    speed klibin hiz orani (1 = normal, 2 = iki kat hizli). Hizi degistirilmis
+    klipte kaynak saniyesi sequence'de daha kisa yer kapliyor; boleni atlarsak
+    obekler klip ilerledikce artan bir hatayla kayiyor.
+
+    Ters cevrilmis klipte (reversed) esleme guvenilir degil - obek atilmasi
+    yerine hicbir sey basilmiyor, cagiran taraf kullaniciyi uyarabilsin diye.
+
+    occurrence: { start, inPoint, outPoint, speed, reversed }  - saniye
   */
   function mapToSequence(cues, occurrence) {
     var out = [];
     if (!occurrence) return out;
+    if (occurrence.reversed) return out;
 
-    var offset = occurrence.start - occurrence.inPoint;
+    var speed = Number(occurrence.speed);
+    if (!isFinite(speed) || speed <= 0) speed = 1;
 
     for (var i = 0; i < cues.length; i++) {
       var c = cues[i];
@@ -286,8 +311,8 @@
       var mapped = clone(c);
       mapped.sourceStart = c.start;
       mapped.sourceEnd = c.end;
-      mapped.start = s + offset;
-      mapped.end = e + offset;
+      mapped.start = occurrence.start + (s - occurrence.inPoint) / speed;
+      mapped.end = occurrence.start + (e - occurrence.inPoint) / speed;
       mapped.clipped = (s !== c.start || e !== c.end);
       out.push(mapped);
     }
